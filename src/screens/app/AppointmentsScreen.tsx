@@ -1,0 +1,183 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, Alert, TouchableOpacity } from 'react-native';
+import { useAuth } from '../../hooks/useAuth';
+import { AppointmentList } from '../../components/appointments/AppointmentList';
+import { Appointment } from '../../types/index';
+import { getUserAppointments, deleteAppointment } from '../../api/appointments';
+import { Ionicons } from '@expo/vector-icons';
+
+const AppointmentsScreen: React.FC = () => {
+  const { token } = useAuth();
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
+
+  useEffect(() => {
+    loadAppointments();
+  }, []);
+
+  const loadAppointments = async () => {
+    if (!token) return;
+    
+    try {
+      setIsLoading(true);
+      const response = await getUserAppointments(token);
+      setAppointments(response);
+    } catch (error) {
+      console.error('Erreur lors du chargement des rendez-vous:', error);
+      Alert.alert('Erreur', 'Impossible de charger vos rendez-vous.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAppointmentPress = (appointment: Appointment) => {
+    // Naviguer vers les détails du rendez-vous
+    console.log('Pressed appointment:', appointment);
+  };
+
+  const handleCancelAppointment = (appointmentId: string) => {
+    Alert.alert(
+      'Annuler le rendez-vous',
+      'Êtes-vous sûr de vouloir annuler ce rendez-vous ?',
+      [
+        { text: 'Non', style: 'cancel' },
+        {
+          text: 'Oui',
+          style: 'destructive',
+          onPress: async () => {
+            if (!token) return;
+            
+            try {
+              await deleteAppointment(appointmentId, token);
+              // Mettre à jour la liste des rendez-vous
+              setAppointments(appointments.map(apt => 
+                apt.id === appointmentId ? { ...apt, status: 'cancelled' } : apt
+              ));
+              Alert.alert('Succès', 'Votre rendez-vous a été annulé.');
+            } catch (error) {
+              console.error('Erreur lors de l\'annulation du rendez-vous:', error);
+              Alert.alert('Erreur', 'Impossible d\'annuler ce rendez-vous.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const currentDate = new Date();
+  const upcomingAppointments = appointments.filter(apt => {
+    const aptDate = new Date(apt.date);
+    return aptDate >= currentDate && apt.status !== 'cancelled';
+  });
+  
+  const pastAppointments = appointments.filter(apt => {
+    const aptDate = new Date(apt.date);
+    return aptDate < currentDate || apt.status === 'cancelled';
+  });
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Mes rendez-vous</Text>
+        <TouchableOpacity onPress={loadAppointments}>
+          <Ionicons name="refresh" size={24} color="#3498db" />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.tabContainer}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'upcoming' && styles.activeTab]}
+          onPress={() => setActiveTab('upcoming')}
+        >
+          <Text 
+            style={[
+              styles.tabText, 
+              activeTab === 'upcoming' && styles.activeTabText
+            ]}
+          >
+            À venir
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'past' && styles.activeTab]}
+          onPress={() => setActiveTab('past')}
+        >
+          <Text 
+            style={[
+              styles.tabText, 
+              activeTab === 'past' && styles.activeTabText
+            ]}
+          >
+            Passés
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.listContainer}>
+        {activeTab === 'upcoming' ? (
+          <AppointmentList
+            appointments={upcomingAppointments}
+            isLoading={isLoading}
+            onAppointmentPress={handleAppointmentPress}
+            onCancelAppointment={handleCancelAppointment}
+          />
+        ) : (
+          <AppointmentList
+            appointments={pastAppointments}
+            isLoading={isLoading}
+            onAppointmentPress={handleAppointmentPress}
+            onCancelAppointment={() => {}}
+          />
+        )}
+      </View>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#fff',
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  tab: {
+    paddingVertical: 12,
+    marginRight: 16,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  activeTab: {
+    borderBottomColor: '#3498db',
+  },
+  tabText: {
+    fontSize: 16,
+    color: '#666',
+  },
+  activeTabText: {
+    fontWeight: 'bold',
+    color: '#3498db',
+  },
+  listContainer: {
+    flex: 1,
+  },
+});
+
+export default AppointmentsScreen;
