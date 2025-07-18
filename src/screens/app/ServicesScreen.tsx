@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, FlatList, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, FlatList, TouchableOpacity, Image, TextInput } from 'react-native';
 import { Card, Title, Paragraph, Button } from 'react-native-paper';
 import { useAuth } from '../../hooks/useAuth';
 import { Service } from '../../types/index';
@@ -17,6 +17,7 @@ const ServicesScreen: React.FC = () => {
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([{ id: 'all', name: 'Tous' }]);
   // Ajout d'un état pour la recherche
   const [search, setSearch] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
 
   useEffect(() => {
     if (user && token) {
@@ -91,7 +92,7 @@ const ServicesScreen: React.FC = () => {
       if (String(service.categoryId) !== String(selectedCategory)) return false;
     }
     // Filtre par recherche
-    if (search && !service.name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (showSearch && search && !service.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
@@ -110,11 +111,19 @@ const ServicesScreen: React.FC = () => {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Services</Text>
-        {/* Afficher seulement l'icône de la loupe pour la recherche */}
-        <TouchableOpacity>
+        <TouchableOpacity onPress={() => setShowSearch(s => !s)}>
           <Ionicons name="search" size={24} color="#333" />
         </TouchableOpacity>
       </View>
+      {showSearch && (
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Rechercher un service..."
+          value={search}
+          onChangeText={setSearch}
+          autoFocus
+        />
+      )}
       <View style={styles.categoryContainer}>
         <FlatList
           horizontal
@@ -195,6 +204,17 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: 'bold',
+  },
+  searchInput: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginHorizontal: 16,
+    marginBottom: 12,
   },
   categoryContainer: {
     backgroundColor: '#fff',

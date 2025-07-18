@@ -84,31 +84,34 @@ const HomeScreen = ({ navigation }: any) => {
               <Button
                 mode="contained"
                 style={styles.button}
-                onPress={() => navigation.navigate('AuthTab' as never)}
+              onPress={() => navigation.navigate('AuthTab' as never)}
               >
                 Se connecter
               </Button>
             </View>
           ) : (
             <View style={{ marginTop: 16 }}>
-              <AppointmentList
-                appointments={appointmentsOfDay}
-                isLoading={isLoading}
-                onAppointmentPress={() => {}}
-                onCancelAppointment={() => {}}
-              />
-              {appointmentsOfDay.length === 0 && !isLoading && (
-                <Text style={{ textAlign: 'center', color: '#888', fontSize: 15, marginTop: 8 }}>
-                  Aucun rendez-vous ce jour
-                </Text>
+              {appointmentsOfDay.length === 0 ? (
+                <>
+                  <Text style={{ textAlign: 'center', color: '#888', fontSize: 15 }}>
+                    Aucun rendez-vous
+                  </Text>
+                  <Button
+                    mode="contained"
+                    style={[styles.button, { alignSelf: 'center', marginTop: 12 }]}
+                    onPress={() => navigation.navigate('ServicesTab')}
+                  >
+                    Prendre un rendez-vous
+                  </Button>
+                </>
+              ) : (
+                <AppointmentList
+                  appointments={appointmentsOfDay}
+                  isLoading={isLoading}
+                  onAppointmentPress={() => {}}
+                  onCancelAppointment={() => {}}
+                />
               )}
-              <Button
-                mode="contained"
-                style={[styles.button, { alignSelf: 'center', marginTop: 12 }]}
-                onPress={() => navigation.navigate('ServicesTab')}
-              >
-                Prendre un rendez-vous
-              </Button>
             </View>
           )}
         </Card.Content>

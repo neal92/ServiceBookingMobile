@@ -46,7 +46,7 @@ const AppointmentsScreen: React.FC = () => {
 
   const handleAppointmentPress = (appointment: Appointment) => {
     // Naviguer vers les détails du rendez-vous
-    console.log('Pressed appointment:', appointment);
+    console.log('Pressed appointment:' , appointment);
   };
 
   const handleCancelAppointment = (appointmentId: string) => {

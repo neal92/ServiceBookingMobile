@@ -78,3 +78,21 @@ export const deleteAppointment = async (appointmentId: string, token: string) =>
     throw error;
   }
 };
+
+/**
+ * Récupérer les rendez-vous d'un utilisateur par son ID (admin ou debug)
+ * @param userId - ID de l'utilisateur
+ * @param token - Token d'authentification
+ * @returns Liste des rendez-vous de l'utilisateur
+ */
+export const getAppointmentsByUserId = async (userId: string, token: string) => {
+  try {
+    const response = await apiClient.get(
+      `/appointments/user/${userId}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
