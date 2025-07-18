@@ -53,3 +53,18 @@ export const getServiceAvailability = async (serviceId: string, date: string, to
     throw error;
   }
 };
+
+/**
+ * Récupérer toutes les catégories de services
+ * @param token - Token d'authentification (optionnel selon l'API)
+ * @returns Liste des catégories
+ */
+export const getAllCategories = async (token?: string) => {
+  try {
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const response = await apiClient.get(`/categories`, { headers });
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};

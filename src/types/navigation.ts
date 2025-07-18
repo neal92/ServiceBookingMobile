@@ -3,6 +3,7 @@ import { NavigatorScreenParams } from '@react-navigation/native';
 // Types pour le Bottom Tab Navigator
 export type TabParamList = {
   HomeTab: undefined;
+  ServicesTab: undefined;
   AppointmentsTab: undefined;
   MessagingTab: undefined;
   ProfileTab: undefined;

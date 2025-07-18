@@ -1,28 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, FlatList, TouchableOpacity, Image } from 'react-native';
+import { Card, Title, Paragraph, Button } from 'react-native-paper';
 import { useAuth } from '../../hooks/useAuth';
 import { Service } from '../../types/index';
-import { getAllServices } from '../../api/services';
+import { getAllServices, getAllCategories } from '../../api/services';
 import { Loading } from '../../components/common/Loading';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 
 const ServicesScreen: React.FC = () => {
-  const { token } = useAuth();
+  const navigation = useNavigation();
+  const { token, user } = useAuth();
   const [services, setServices] = useState<Service[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  
-  const categories = [
-    { id: 'all', name: 'Tous' },
-    { id: 'haircut', name: 'Coiffure' },
-    { id: 'beauty', name: 'Beauté' },
-    { id: 'wellness', name: 'Bien-être' },
-    { id: 'repair', name: 'Réparation' },
-  ];
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([{ id: 'all', name: 'Tous' }]);
+  // Ajout d'un état pour la recherche
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
-    loadServices();
-  }, []);
+    if (user && token) {
+      loadServices();
+      loadCategories();
+    }
+  }, [user, token]);
 
   const loadServices = async () => {
     try {
@@ -36,9 +37,70 @@ const ServicesScreen: React.FC = () => {
     }
   };
 
-  const filteredServices = selectedCategory && selectedCategory !== 'all'
-    ? services.filter(service => service.category === selectedCategory)
-    : services;
+  const loadCategories = async () => {
+    try {
+      const response = await getAllCategories(token || undefined);
+      // On suppose que chaque catégorie a un id et un nom
+      setCategories([{ id: 'all', name: 'Tous' }, ...response]);
+    } catch (error) {
+      console.error('Erreur lors du chargement des catégories:', error);
+    }
+  };
+
+  // Debug temporaire pour voir les valeurs de service.category et des catégories
+  useEffect(() => {
+    if (services.length > 0) {
+      console.log('DEBUG services:', services.map(s => ({ id: s.id, name: s.name, category: s.category })));
+    }
+    if (categories.length > 0) {
+      console.log('DEBUG categories:', categories);
+    }
+  }, [services, categories]);
+
+  if (!user) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8f9fa' }}>
+        <Card style={[styles.card, { width: '90%', maxWidth: 400, padding: 8 }]}> 
+          <Card.Content>
+            <Title style={{ color: '#333' }}>OUPS !</Title>
+            <Paragraph style={{ color: '#333' }}>
+              Veuillez vous connecter pour voir les services disponibles.
+            </Paragraph>
+          </Card.Content>
+          <Card.Actions>
+            <Button
+              mode="contained"
+              onPress={() => navigation.navigate('AuthTab' as never)}
+              style={{ backgroundColor: '#1a73e8' }}
+            >
+              Se connecter
+            </Button>
+          </Card.Actions>
+        </Card>
+      </View>
+    );
+  }
+
+  // Correction du typage Service pour accepter categoryId
+  type ServiceWithCategoryId = Service & { categoryId?: number | null };
+  // Correction du filtrage pour que selectedCategory soit bien un string (id) et conversion lors de la comparaison
+  const filteredServices = (services as ServiceWithCategoryId[]).filter(service => {
+    if (!service) return false;
+    // Filtre par catégorie
+    if (selectedCategory && selectedCategory !== 'all') {
+      if (String(service.categoryId) !== String(selectedCategory)) return false;
+    }
+    // Filtre par recherche
+    if (search && !service.name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  // Trouver le nom de la catégorie à partir de l'id
+  const getCategoryName = (categoryId: number | null | undefined) => {
+    if (!categoryId) return '';
+    const cat = categories.find(c => String(c.id) === String(categoryId));
+    return cat ? cat.name : '';
+  };
 
   if (isLoading) {
     return <Loading />;
@@ -48,11 +110,11 @@ const ServicesScreen: React.FC = () => {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Services</Text>
+        {/* Afficher seulement l'icône de la loupe pour la recherche */}
         <TouchableOpacity>
           <Ionicons name="search" size={24} color="#333" />
         </TouchableOpacity>
       </View>
-      
       <View style={styles.categoryContainer}>
         <FlatList
           horizontal
@@ -80,33 +142,38 @@ const ServicesScreen: React.FC = () => {
           contentContainerStyle={styles.categoryList}
         />
       </View>
-      
       <FlatList
         data={filteredServices}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.serviceCard}>
-            <Image source={{ uri: item.imageUrl }} style={styles.serviceImage} />
-            <View style={styles.serviceContent}>
-              <View style={styles.serviceInfo}>
-                <Text style={styles.serviceName}>{item.name}</Text>
-                <Text style={styles.servicePrice}>{item.price} €</Text>
-              </View>
-              <Text style={styles.serviceDescription} numberOfLines={2}>
-                {item.description}
-              </Text>
-              <View style={styles.serviceFooter}>
-                <View style={styles.serviceDuration}>
-                  <Ionicons name="time-outline" size={16} color="#666" />
-                  <Text style={styles.serviceDurationText}>{item.duration} min</Text>
+        renderItem={({ item }) =>
+          item ? (
+            <TouchableOpacity style={styles.serviceCard}>
+              <Image source={{ uri: item.imageUrl }} style={styles.serviceImage} />
+              <View style={styles.serviceContent}>
+                <View style={styles.serviceInfo}>
+                  <Text style={styles.serviceName}>{item.name}</Text>
+                  <Text style={styles.servicePrice}>{item.price} €</Text>
                 </View>
-                <TouchableOpacity style={styles.bookButton}>
-                  <Text style={styles.bookButtonText}>Réserver</Text>
-                </TouchableOpacity>
+                {/* Affichage du nom de la catégorie associée, en couleur bleue et gras */}
+                <Text style={{ color: '#3498db', fontWeight: 'bold', fontSize: 13, marginBottom: 4 }}>
+                  {getCategoryName((item as ServiceWithCategoryId).categoryId) || 'Catégorie inconnue'}
+                </Text>
+                <Text style={styles.serviceDescription} numberOfLines={2}>
+                  {item.description}
+                </Text>
+                <View style={styles.serviceFooter}>
+                  <View style={styles.serviceDuration}>
+                    <Ionicons name="time-outline" size={16} color="#666" />
+                    <Text style={styles.serviceDurationText}>{item.duration} min</Text>
+                  </View>
+                  <TouchableOpacity style={styles.bookButton}>
+                    <Text style={styles.bookButtonText}>Réserver</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
-          </TouchableOpacity>
-        )}
+            </TouchableOpacity>
+          ) : null
+        }
         contentContainerStyle={styles.servicesList}
       />
     </SafeAreaView>
@@ -222,6 +289,15 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 14,
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
 });
 

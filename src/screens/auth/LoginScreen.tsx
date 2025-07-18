@@ -3,6 +3,7 @@ import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Image, KeyboardAv
 import { TextInput, Button } from 'react-native-paper';
 import { AuthContext } from '../../contexts/AuthContext';
 import { StatusBar } from 'expo-status-bar';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LoginScreen = ({ navigation }: any) => {
   const [email, setEmail] = useState('');
@@ -12,9 +13,25 @@ const LoginScreen = ({ navigation }: any) => {
 
   const handleLogin = async () => {
     try {
+      console.log('DEBUG login: email', email, 'password', password);
       await login({ email, password });
-    } catch (err) {
-      console.error('Login failed:', err);
+      // Afficher le user et le token après login
+      const user = await AsyncStorage.getItem('user');
+      const token = await AsyncStorage.getItem('token');
+      console.log('DEBUG user après login:', user);
+      console.log('DEBUG token après login:', token);
+      // Navigation après succès
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Tabs' }],
+      });
+    } catch (err: any) {
+      // Affichage détaillé de l'erreur dans la console
+      if (err.response) {
+        console.error('Login failed:', err.response.data);
+      } else {
+        console.error('Login failed:', err);
+      }
     }
   };
 

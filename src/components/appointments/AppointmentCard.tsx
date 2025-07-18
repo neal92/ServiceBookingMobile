@@ -51,8 +51,22 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({
           </View>
         </View>
         <Text style={styles.price}>{service.price} €</Text>
-        
-        {status !== 'cancelled' && (
+        {/* Affichage du bouton Annuler ou Supprimer selon le statut */}
+        {status === 'cancelled' ? (
+          <TouchableOpacity 
+            style={[styles.cancelButton, { borderColor: '#e74c3c' }]}
+            onPress={() => onCancel && onCancel(id)}
+          >
+            <Text style={[styles.cancelButtonText, { color: '#e74c3c' }]}>Supprimer</Text>
+          </TouchableOpacity>
+        ) : status === 'completed' ? (
+          <TouchableOpacity 
+            style={[styles.cancelButton, { borderColor: '#e74c3c' }]}
+            onPress={() => onCancel && onCancel(id)}
+          >
+            <Text style={[styles.cancelButtonText, { color: '#e74c3c' }]}>Supprimer</Text>
+          </TouchableOpacity>
+        ) : (
           <TouchableOpacity 
             style={styles.cancelButton}
             onPress={() => onCancel && onCancel(id)}

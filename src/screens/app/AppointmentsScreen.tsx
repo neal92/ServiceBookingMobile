@@ -22,7 +22,20 @@ const AppointmentsScreen: React.FC = () => {
     try {
       setIsLoading(true);
       const response = await getUserAppointments(token);
-      setAppointments(response);
+      // Adapter les rendez-vous pour fournir un champ 'service' objet
+      const adapted = response.map((apt: any) => ({
+        ...apt,
+        service: {
+          id: apt.serviceId?.toString() ?? '',
+          name: apt.serviceName ?? '',
+          price: Number(apt.price) ?? 0,
+          duration: apt.duration ?? 0,
+          description: '',
+          category: '',
+          imageUrl: '',
+        },
+      }));
+      setAppointments(adapted);
     } catch (error) {
       console.error('Erreur lors du chargement des rendez-vous:', error);
       Alert.alert('Erreur', 'Impossible de charger vos rendez-vous.');
@@ -58,6 +71,32 @@ const AppointmentsScreen: React.FC = () => {
             } catch (error) {
               console.error('Erreur lors de l\'annulation du rendez-vous:', error);
               Alert.alert('Erreur', 'Impossible d\'annuler ce rendez-vous.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Ajout d'une fonction pour supprimer un rendez-vous définitivement
+  const handleDeleteAppointment = (appointmentId: string) => {
+    Alert.alert(
+      'Supprimer le rendez-vous',
+      'Êtes-vous sûr de vouloir supprimer ce rendez-vous définitivement ?',
+      [
+        { text: 'Non', style: 'cancel' },
+        {
+          text: 'Oui',
+          style: 'destructive',
+          onPress: async () => {
+            if (!token) return;
+            try {
+              await deleteAppointment(appointmentId, token);
+              setAppointments(appointments.filter(apt => apt.id !== appointmentId));
+              Alert.alert('Succès', 'Le rendez-vous a été supprimé.');
+            } catch (error) {
+              console.error('Erreur lors de la suppression du rendez-vous:', error);
+              Alert.alert('Erreur', 'Impossible de supprimer ce rendez-vous.');
             }
           },
         },
@@ -127,7 +166,7 @@ const AppointmentsScreen: React.FC = () => {
             appointments={pastAppointments}
             isLoading={isLoading}
             onAppointmentPress={handleAppointmentPress}
-            onCancelAppointment={() => {}}
+            onCancelAppointment={handleDeleteAppointment}
           />
         )}
       </View>
