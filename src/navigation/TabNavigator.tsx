@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth';
 import { HomeScreen, ProfileScreen, AppointmentsScreen, ServicesScreen } from '../screens/app';
 import AuthNavigator from './AuthNavigator';
 import { TabParamList } from '../types/navigation';
+import TabBarIcon from '../components/navigation/TabBarIcon';
 
 // Écran de messagerie temporaire (à remplacer par votre composant réel)
 import { View, Text } from 'react-native';
@@ -42,27 +43,113 @@ const TabNavigator = () => {
             iconName = focused ? 'log-in' : 'log-in-outline';
           }
 
-          return <Ionicons name={iconName as any} size={size} color={color} />;
+          // Utiliser notre composant personnalisé TabBarIcon
+          let label = '';
+          
+          if (route.name === 'HomeTab') {
+            label = 'Accueil';
+          } else if (route.name === 'ServicesTab') {
+            label = 'Services';
+          } else if (route.name === 'AppointmentsTab') {
+            label = 'RDV';
+          } else if (route.name === 'MessagingTab') {
+            label = 'Messages';
+          } else if (route.name === 'ProfileTab') {
+            label = 'Profil';
+          } else if (route.name === 'AuthTab') {
+            label = 'Connexion';
+          }
+          
+          return (
+            <TabBarIcon 
+              iconName={iconName as any}
+              focused={focused}
+              color={color}
+              label={label}
+            />
+          );
         },
-        tabBarActiveTintColor: '#2E86C1',
-        tabBarInactiveTintColor: 'gray',
+        tabBarActiveTintColor: '#3498db',
+        tabBarInactiveTintColor: '#95a5a6',
         headerShown: true,
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '600',
+          marginTop: 1,
+          marginBottom: 3,
+          display: 'none', // On masque les labels par défaut car on utilise notre propre label dans TabBarIcon
+        },
+        tabBarStyle: {
+          height: 60, // Hauteur optimale
+          backgroundColor: '#fff',
+          borderTopColor: '#e0e0e0', // Bordure légèrement plus visible
+          borderTopWidth: 1,
+          paddingTop: 5, // Remontée du contenu
+          paddingBottom: 5,
+          marginBottom: 10, // Remonte la TabBar de 10 pixels par rapport au bas de l'écran
+          elevation: 10, // Ombre plus prononcée sur Android
+          shadowColor: '#000', // Ombre sur iOS
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.12,
+          shadowRadius: 5,
+          position: 'absolute', // Assure que la barre reste visible
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 999, // S'assure que la tabbar reste au-dessus des autres éléments
+        },
+        tabBarItemStyle: {
+          paddingVertical: 3, // Réduit pour mieux aligner
+        },
       })}
     >
       <Tab.Screen 
         name="HomeTab" 
         component={HomeScreen} 
-        options={{ title: 'Accueil' }} 
+        options={{ 
+          title: 'Accueil',
+          headerStyle: {
+            backgroundColor: '#fff',
+            shadowColor: 'transparent',
+            elevation: 0,
+          },
+          headerTitleStyle: {
+            fontWeight: '600',
+            fontSize: 18,
+          },
+        }} 
       />
       <Tab.Screen
         name="ServicesTab"
         component={ServicesScreen}
-        options={{ title: 'Services' }}
+        options={{ 
+          title: 'Services',
+          headerStyle: {
+            backgroundColor: '#fff',
+            shadowColor: 'transparent',
+            elevation: 0,
+          },
+          headerTitleStyle: {
+            fontWeight: '600',
+            fontSize: 18,
+          },
+        }}
       />
       <Tab.Screen
         name="MessagingTab"
         component={MessagingScreen}
-        options={{ title: 'Messagerie' }}
+        options={{ 
+          title: 'Messagerie',
+          headerStyle: {
+            backgroundColor: '#fff',
+            shadowColor: 'transparent',
+            elevation: 0,
+          },
+          headerTitleStyle: {
+            fontWeight: '600',
+            fontSize: 18,
+          },
+        }}
       />
       
       {isAuthenticated ? (
@@ -70,19 +157,49 @@ const TabNavigator = () => {
           <Tab.Screen 
             name="AppointmentsTab" 
             component={AppointmentsScreen} 
-            options={{ title: 'Rendez-vous' }} 
+            options={{ 
+              title: 'Rendez-vous',
+              headerStyle: {
+                backgroundColor: '#fff',
+                shadowColor: 'transparent',
+                elevation: 0,
+              },
+              headerTitleStyle: {
+                fontWeight: '600',
+                fontSize: 18,
+              },
+            }} 
           />
           <Tab.Screen 
             name="ProfileTab" 
             component={ProfileScreen} 
-            options={{ title: 'Profil' }} 
+            options={{ 
+              title: 'Profil',
+              headerStyle: {
+                backgroundColor: '#fff',
+                shadowColor: 'transparent',
+                elevation: 0,
+              },
+              headerTitleStyle: {
+                fontWeight: '600',
+                fontSize: 18,
+              },
+            }} 
           />
         </>
       ) : (
         <Tab.Screen 
           name="AuthTab" 
           component={LoginScreen} 
-          options={{ title: 'Connexion', headerShown: false }} 
+          options={{ 
+            title: 'Connexion', 
+            headerShown: false,
+            headerStyle: {
+              backgroundColor: '#fff',
+              shadowColor: 'transparent',
+              elevation: 0,
+            }
+          }} 
         />
       )}
     </Tab.Navigator>

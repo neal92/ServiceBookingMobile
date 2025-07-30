@@ -100,8 +100,8 @@ export const AppointmentForm: React.FC<AppointmentFormProps> = ({
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>Réserver {service.name}</Text>
-      <Text style={styles.price}>{service.price} €</Text>
+      <Text style={styles.title}>Réserver {service?.name || 'Service'}</Text>
+      <Text style={styles.price}>{service?.price ? `${service.price} €` : 'Prix non défini'}</Text>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {/* Sélecteur de jours horizontal */}
       <View style={styles.daysContainer}>

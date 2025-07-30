@@ -4,11 +4,15 @@ export * from './navigation';
 // Types pour l'authentification
 export interface User {
   id: string;
-  name: string;
+  firstName: string;
+  lastName?: string;
   email: string;
+  role?: string;
   phone?: string;
   photoUrl?: string;
-  createdAt: string;
+  avatar?: string;
+  pseudo?: string;
+  createdAt?: string;
 }
 
 export interface AuthResponse {
@@ -35,8 +39,12 @@ export interface Service {
   price: number;
   duration: number;  // en minutes
   category: string;
-  imageUrl: string;
+  categoryId?: number;
+  categoryName?: string;
+  image?: string;    // Nom du fichier image
+  imageUrl?: string; // URL complète (optionnelle pour compatibilité)
   featured?: boolean;
+  createdAt?: string;
 }
 
 // Type pour les créneaux horaires disponibles
@@ -44,6 +52,7 @@ export interface TimeSlot {
   id: string;
   time: string;  // format HH:MM
   available: boolean;
+  period?: 'morning' | 'afternoon';
 }
 
 // Type pour les catégories de services

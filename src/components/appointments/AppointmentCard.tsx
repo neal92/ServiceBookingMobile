@@ -43,14 +43,14 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({
       disabled={status === 'cancelled'}
     >
       <View style={styles.content}>
-        <Text style={styles.serviceName}>{service.name}</Text>
+        <Text style={styles.serviceName}>{service?.name || 'Service non défini'}</Text>
         <View style={styles.row}>
           <Text style={styles.dateTime}>{formatDate(date)} à {formatTime(date)}</Text>
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor() }]}>
             <Text style={styles.statusText}>{getStatusText()}</Text>
           </View>
         </View>
-        <Text style={styles.price}>{service.price} €</Text>
+        <Text style={styles.price}>{service?.price ? `${service.price} €` : 'Prix non défini'}</Text>
         {/* Affichage du bouton Annuler ou Supprimer selon le statut */}
         {status === 'cancelled' ? (
           <TouchableOpacity 

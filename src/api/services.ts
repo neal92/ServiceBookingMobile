@@ -1,4 +1,4 @@
-import apiClient, { API_URL } from '../utils/api';
+import apiClient from '../utils/api';
 import { Service } from '../types/index';
 
 /**

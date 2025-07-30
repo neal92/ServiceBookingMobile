@@ -20,7 +20,23 @@ const AppNavigator = () => {
   }
 
   return (
-    <Stack.Navigator>
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: '#fff',
+          elevation: 0, // Pour Android
+          shadowOpacity: 0, // Pour iOS
+          borderBottomWidth: 1,
+          borderBottomColor: '#f0f0f0',
+        },
+        headerTitleStyle: {
+          fontWeight: '600',
+          fontSize: 18,
+          color: '#2c3e50',
+        },
+        cardStyle: { backgroundColor: '#fff' }
+      }}
+    >
       <Stack.Screen 
         name="Tabs" 
         component={TabNavigator} 

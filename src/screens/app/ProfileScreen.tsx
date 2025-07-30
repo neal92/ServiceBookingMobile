@@ -34,62 +34,45 @@ const ProfileScreen: React.FC = () => {
           <Text style={styles.userEmail}>{user?.email || 'email@example.com'}</Text>
         </View>
 
-        <View style={styles.statsSection}>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>8</Text>
-            <Text style={styles.statLabel}>Rendez-vous</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>4</Text>
-            <Text style={styles.statLabel}>Complétés</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>2</Text>
-            <Text style={styles.statLabel}>À venir</Text>
-          </View>
-        </View>
-
         <View style={styles.menuSection}>
           <TouchableOpacity style={styles.menuItem}>
             <View style={styles.menuIconContainer}>
-              <Ionicons name="person-outline" size={20} color="#3498db" />
+              <Ionicons name="person-outline" size={24} color="#3498db" />
             </View>
             <Text style={styles.menuText}>Modifier le profil</Text>
-            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+            <Ionicons name="chevron-forward" size={24} color="#ccc" />
           </TouchableOpacity>
           
           <TouchableOpacity style={styles.menuItem}>
             <View style={styles.menuIconContainer}>
-              <Ionicons name="calendar-outline" size={20} color="#3498db" />
+              <Ionicons name="calendar-outline" size={24} color="#3498db" />
             </View>
             <Text style={styles.menuText}>Historique des rendez-vous</Text>
-            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+            <Ionicons name="chevron-forward" size={24} color="#ccc" />
           </TouchableOpacity>
           
           <TouchableOpacity style={styles.menuItem}>
             <View style={styles.menuIconContainer}>
-              <Ionicons name="card-outline" size={20} color="#3498db" />
+              <Ionicons name="card-outline" size={24} color="#3498db" />
             </View>
             <Text style={styles.menuText}>Méthodes de paiement</Text>
-            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+            <Ionicons name="chevron-forward" size={24} color="#ccc" />
           </TouchableOpacity>
           
           <TouchableOpacity style={styles.menuItem}>
             <View style={styles.menuIconContainer}>
-              <Ionicons name="notifications-outline" size={20} color="#3498db" />
+              <Ionicons name="notifications-outline" size={24} color="#3498db" />
             </View>
             <Text style={styles.menuText}>Notifications</Text>
-            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+            <Ionicons name="chevron-forward" size={24} color="#ccc" />
           </TouchableOpacity>
           
           <TouchableOpacity style={styles.menuItem}>
             <View style={styles.menuIconContainer}>
-              <Ionicons name="help-circle-outline" size={20} color="#3498db" />
+              <Ionicons name="help-circle-outline" size={24} color="#3498db" />
             </View>
             <Text style={styles.menuText}>Aide et support</Text>
-            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+            <Ionicons name="chevron-forward" size={24} color="#ccc" />
           </TouchableOpacity>
         </View>
 
@@ -145,31 +128,6 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 4,
   },
-  statsSection: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    marginTop: 1,
-    padding: 16,
-    justifyContent: 'space-around',
-  },
-  statItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: '#e0e0e0',
-  },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#3498db',
-  },
-  statLabel: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
-  },
   menuSection: {
     marginTop: 20,
     backgroundColor: '#fff',
@@ -180,23 +138,24 @@ const styles = StyleSheet.create({
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
+    paddingVertical: 20, // Augmenté de 16 à 20
+    paddingHorizontal: 24, // Augmenté de 20 à 24
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
   menuIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 48, // Augmenté de 40 à 48
+    height: 48, // Augmenté de 40 à 48
+    borderRadius: 24, // Augmenté de 20 à 24
     backgroundColor: '#ecf5fe',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: 20, // Augmenté de 16 à 20
   },
   menuText: {
-    fontSize: 16,
+    fontSize: 18, // Augmenté de 16 à 18
     flex: 1,
+    fontWeight: '500', // Ajout d'un poids de police plus important
   },
   logoutContainer: {
     marginTop: 30,

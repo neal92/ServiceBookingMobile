@@ -1,4 +1,4 @@
-import apiClient, { API_URL } from '../utils/api';
+import apiClient from '../utils/api';
 import { Appointment } from '../types/index';
 
 /**
@@ -93,6 +93,53 @@ export const getAppointmentsByUserId = async (userId: string, token: string) => 
     );
     return response.data;
   } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Vérifier la disponibilité des créneaux pour une date donnée
+ * @param date - Date au format ISO (YYYY-MM-DD)
+ * @param serviceId - ID du service (optionnel)
+ * @returns Liste des créneaux avec leur disponibilité ou null si l'API n'est pas disponible
+ */
+export const getAvailableTimeSlots = async (date: string, serviceId?: string) => {
+  try {
+    const params = new URLSearchParams({ date });
+    if (serviceId) {
+      params.append('serviceId', serviceId);
+    }
+    
+    const response = await apiClient.get(`/appointments/availability?${params.toString()}`);
+    return response.data;
+  } catch (error: any) {
+    // Si l'endpoint n'existe pas (404), retourner null pour utiliser les créneaux par défaut
+    if (error.response?.status === 404 || error.status === 404) {
+      console.log('Endpoint de disponibilité non implémenté sur le serveur, utilisation des créneaux par défaut');
+      return null;
+    }
+    // Pour les autres erreurs, les propager
+    throw error;
+  }
+};
+
+/**
+ * Vérifier si un créneau spécifique est disponible
+ * @param date - Date au format ISO (YYYY-MM-DD)
+ * @param time - Heure au format HH:MM
+ * @returns Boolean indiquant si le créneau est disponible
+ */
+export const checkTimeSlotAvailability = async (date: string, time: string) => {
+  try {
+    const response = await apiClient.get(`/appointments/check/${date}/${time}`);
+    return response.data;
+  } catch (error: any) {
+    // Si l'endpoint n'existe pas (404), considérer le créneau comme disponible
+    if (error.response?.status === 404 || error.status === 404) {
+      console.log('Endpoint de vérification non implémenté sur le serveur, créneau considéré comme disponible');
+      return { available: true };
+    }
+    // Pour les autres erreurs, les propager
     throw error;
   }
 };
