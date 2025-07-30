@@ -309,11 +309,15 @@ const HomeScreen = ({ navigation }: any) => {
   };
 
   return (
-    <ScrollView style={[styles.container, isDarkMode && styles.containerDark]}>
-      <View style={styles.header}>
-        <Text style={[styles.welcome, isDarkMode && styles.textDark]}>
-          {user ? `Bienvenue ${user.firstName}!` : 'Bienvenue'}
-        </Text>
+    <ScrollView 
+      style={[styles.container, isDarkMode && styles.containerDark]}
+      contentContainerStyle={styles.scrollContent}
+    >
+      <View style={[styles.header, isDarkMode && styles.headerDark]}>
+        <View style={styles.titleSection}>
+          <Text style={[styles.appName, isDarkMode && styles.appNameDark]}>ServiceBooking</Text>
+          <Text style={[styles.headerSubtitle, isDarkMode && styles.headerSubtitleDark]}>Simplifiez votre gestion de rendez-vous</Text>
+        </View>
         <TouchableOpacity
           style={[styles.themeModeButton, isDarkMode && styles.themeModeButtonDark]}
           onPress={toggleTheme}
@@ -326,6 +330,15 @@ const HomeScreen = ({ navigation }: any) => {
         </TouchableOpacity>
       </View>
       
+      {/* Section de bienvenue */}
+      {user && (
+        <View style={[styles.welcomeSection, isDarkMode && styles.welcomeSectionDark]}>
+          <Text style={[styles.welcome, isDarkMode && styles.textDark]}>
+            Bienvenue {user.firstName}!
+          </Text>
+        </View>
+      )}
+      
       {/* Section des statistiques des rendez-vous */}
       {user && (
         <View style={[styles.statsSection, isDarkMode && styles.statsSectionDark]}>
@@ -335,12 +348,12 @@ const HomeScreen = ({ navigation }: any) => {
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={[styles.statNumber, isDarkMode && styles.textDark]}>{completedAppointments}</Text>
+            <Text style={styles.statNumber}>{completedAppointments}</Text>
             <Text style={[styles.statLabel, isDarkMode && styles.textSecondaryDark]}>Complétés</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={[styles.statNumber, isDarkMode && styles.textDark]}>{upcomingAppointments}</Text>
+            <Text style={styles.statNumber}>{upcomingAppointments}</Text>
             <Text style={[styles.statLabel, isDarkMode && styles.textSecondaryDark]}>À venir</Text>
           </View>
         </View>
@@ -355,15 +368,6 @@ const HomeScreen = ({ navigation }: any) => {
             <View style={styles.calendarTitleContainer}>
               <Text style={[styles.sectionTitle, isDarkMode && styles.sectionTitleDark]}>
                 📅 Agenda {viewMode === 'week' ? 'Semaine' : 'Mois'}
-              </Text>
-              <Text style={[styles.monthLabel, isDarkMode && styles.monthLabelDark]}>
-                {viewMode === 'week' 
-                  ? `${currentWeekStartDate.toLocaleDateString('fr-FR', { month: 'long' })} - ${
-                      new Date(currentWeekStartDate.getTime() + 6 * 24 * 60 * 60 * 1000).toLocaleDateString('fr-FR', 
-                      { month: 'long', year: 'numeric' })
-                    }`
-                  : selectedDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
-                }
               </Text>
             </View>
             <View style={styles.calendarControls}>
@@ -394,15 +398,31 @@ const HomeScreen = ({ navigation }: any) => {
           {/* Navigation et vue du calendrier */}
           <View style={{flex: 1}}>
               {viewMode === 'week' ? (
-                <View style={styles.weekNavigation}>
-                  <TouchableOpacity 
-                    onPress={() => navigateWeek('prev')} 
-                    style={[styles.navButton, isDarkMode && styles.navButtonDark]}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="chevron-back-circle" size={20} color="#4F8EF7" />
-                  </TouchableOpacity>
-                
+                <View>
+                  {/* Boutons de navigation au-dessus */}
+                  <View style={styles.weekNavigationButtons}>
+                    <TouchableOpacity 
+                      onPress={() => navigateWeek('prev')} 
+                      style={[styles.navButton, isDarkMode && styles.navButtonDark]}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="chevron-back-circle" size={20} color="#4F8EF7" />
+                    </TouchableOpacity>
+                    
+                    <Text style={[styles.currentMonthText, isDarkMode && styles.currentMonthTextDark]}>
+                      {currentWeekStartDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
+                    </Text>
+                    
+                    <TouchableOpacity 
+                      onPress={() => navigateWeek('next')} 
+                      style={[styles.navButton, isDarkMode && styles.navButtonDark]}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="chevron-forward-circle" size={20} color="#4F8EF7" />
+                    </TouchableOpacity>
+                  </View>
+                  
+                  {/* Zone de swipe dédiée aux dates */}
                   <FlatList
                     data={days}
                     horizontal
@@ -438,14 +458,6 @@ const HomeScreen = ({ navigation }: any) => {
                     }}
                     contentContainerStyle={styles.daysContainer}
                   />
-
-                  <TouchableOpacity 
-                    onPress={() => navigateWeek('next')} 
-                    style={[styles.navButton, isDarkMode && styles.navButtonDark]}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="chevron-forward-circle" size={20} color="#4F8EF7" />
-                  </TouchableOpacity>
                 </View>
               ) : (
                 // Vue par mois - Vue en grille
@@ -659,7 +671,7 @@ const HomeScreen = ({ navigation }: any) => {
                     onPress={() => removeNotification(notification.id)}
                     style={styles.removeButton}
                   >
-                    <Ionicons name="close-circle" size={24} color="#ff6b6b" />
+                    <Ionicons name="trash" size={20} color="#ef4444" />
                   </TouchableOpacity>
                 </View>
               ))
@@ -678,8 +690,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
     padding: 16,
   },
+  scrollContent: {
+    paddingBottom: 100, // Espace pour éviter que la tabBar cache le contenu
+  },
   containerDark: {
     backgroundColor: '#111827', // gray-900
+  },
+  headerDark: {
+    backgroundColor: '#111827', // gray-900 - Même couleur que le container dark
+  },
+  welcomeSectionDark: {
+    backgroundColor: '#111827', // gray-900 - Même couleur que le container dark
+  },
+  appNameDark: {
+    color: '#60A5FA', // Bleu plus clair pour le mode sombre
+  },
+  headerSubtitleDark: {
+    color: '#9CA3AF', // gray-400
   },
   cardDark: {
     backgroundColor: '#1F2937', // gray-800
@@ -717,10 +744,33 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#f8f9fa', // Même couleur que le container
+  },
+  welcomeSection: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#f8f9fa', // Même couleur que le container
+    marginBottom: 16,
+  },
+  appName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#4F8EF7',
+  },
+  titleSection: {
+    flex: 1,
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+    fontStyle: 'italic',
   },
   welcome: {
-    fontSize: 22,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '600',
   },
   themeModeButton: {
     padding: 8,
@@ -782,6 +832,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
     paddingHorizontal: 4,
+  },
+  weekNavigationButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingHorizontal: 8,
   },
   navButton: {
     padding: 6,

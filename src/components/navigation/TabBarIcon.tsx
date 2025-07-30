@@ -38,13 +38,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     width: 70, // Plus large pour plus d'espace
-    height: 50, // Plus haut pour plus d'espace vertical
-    marginTop: -2, // Remonte légèrement tous les éléments
+    height: 60, // Plus haut pour plus d'espace vertical
+    marginTop: 0, // Pas de décalage vertical
   },
   iconContainer: {
-    padding: 5,
+    padding: 8, // Plus de padding pour que les icônes soient bien visibles
     borderRadius: 12,
-    marginBottom: 1, // Réduit l'espace entre l'icône et le texte
+    marginBottom: 2, // Espace entre l'icône et le texte
+    minWidth: 32, // Largeur minimale pour les icônes
+    minHeight: 32, // Hauteur minimale pour les icônes
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   label: {
     fontSize: 12, // Taille de police augmentée pour meilleure lisibilité

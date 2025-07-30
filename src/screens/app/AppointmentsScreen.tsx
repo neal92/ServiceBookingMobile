@@ -120,7 +120,10 @@ const AppointmentsScreen: React.FC = () => {
   return (
     <SafeAreaView style={[styles.container, isDarkMode && styles.containerDark]}>
       <View style={[styles.header, isDarkMode && styles.headerDark]}>
-        <Text style={[styles.title, isDarkMode && styles.titleDark]}>Mes rendez-vous</Text>
+        <View style={styles.titleSection}>
+          <Text style={[styles.title, isDarkMode && styles.titleDark]}>ServiceBooking</Text>
+          <Text style={[styles.subtitle, isDarkMode && styles.subtitleDark]}>Simplifiez votre gestion de rendez-vous</Text>
+        </View>
         <TouchableOpacity onPress={loadAppointments}>
           <Ionicons name="refresh" size={24} color={isDarkMode ? "#60A5FA" : "#3498db"} />
         </TouchableOpacity>
@@ -191,11 +194,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    backgroundColor: '#fff',
+    backgroundColor: '#f8f9fa', // Même couleur que le container
   },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
+    color: '#4F8EF7', // Couleur bleue pour ServiceBooking
+  },
+  titleSection: {
+    flex: 1,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+    fontStyle: 'italic',
   },
   tabContainer: {
     flexDirection: 'row',
@@ -229,10 +242,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827', // gray-900
   },
   headerDark: {
-    backgroundColor: '#1F2937', // gray-800
+    backgroundColor: '#111827', // gray-900 - Même couleur que le container dark
   },
   titleDark: {
-    color: '#FFFFFF',
+    color: '#60A5FA', // Bleu plus clair pour le mode sombre
+  },
+  subtitleDark: {
+    color: '#9CA3AF', // gray-400
   },
   tabContainerDark: {
     backgroundColor: '#1F2937', // gray-800

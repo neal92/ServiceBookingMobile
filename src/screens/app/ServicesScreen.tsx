@@ -466,7 +466,10 @@ const ServicesScreen: React.FC = () => {
   return (
     <SafeAreaView style={[styles.container, isDarkMode && styles.containerDark]}>
       <View style={[styles.header, isDarkMode && styles.headerDark]}>
-        <Text style={[styles.title, isDarkMode && styles.titleDark]}>Services</Text>
+        <View style={styles.titleSection}>
+          <Text style={[styles.title, isDarkMode && styles.titleDark]}>ServiceBooking</Text>
+          <Text style={[styles.subtitle, isDarkMode && styles.subtitleDark]}>Simplifiez votre gestion de rendez-vous</Text>
+        </View>
         <View style={{ flexDirection: 'row' }}>
           <TouchableOpacity onPress={testConnection} style={{ marginRight: 15 }}>
             <Ionicons name="refresh" size={24} color={isDarkMode ? "#60A5FA" : "#3498db"} />
@@ -486,34 +489,47 @@ const ServicesScreen: React.FC = () => {
           autoFocus
         />
       )}
-      <View style={[styles.categoryContainer, isDarkMode && styles.categoryContainerDark]}>
-        <FlatList
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          data={categories}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={[
-                styles.categoryButton,
-                isDarkMode && styles.categoryButtonDark,
-                selectedCategory === item.id && styles.selectedCategory
-              ]}
-              onPress={() => setSelectedCategory(item.id)}
-            >
-              <Text 
+      <View style={[styles.filtersSection, isDarkMode && styles.filtersSectionDark]}>
+        <View style={styles.filtersHeader}>
+          <Ionicons 
+            name="filter" 
+            size={18} 
+            color={isDarkMode ? "#60A5FA" : "#3498db"} 
+            style={styles.filtersIcon}
+          />
+          <Text style={[styles.filtersTitle, isDarkMode && styles.filtersTitleDark]}>
+            Filtres
+          </Text>
+        </View>
+        <View style={[styles.categoryContainer, isDarkMode && styles.categoryContainerDark]}>
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            data={categories}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity
                 style={[
-                  styles.categoryText,
-                  isDarkMode && styles.categoryTextDark,
-                  selectedCategory === item.id && styles.selectedCategoryText
+                  styles.categoryButton,
+                  isDarkMode && styles.categoryButtonDark,
+                  selectedCategory === item.id && styles.selectedCategory
                 ]}
+                onPress={() => setSelectedCategory(item.id)}
               >
-                {item.name}
-              </Text>
-            </TouchableOpacity>
-          )}
-          contentContainerStyle={styles.categoryList}
-        />
+                <Text 
+                  style={[
+                    styles.categoryText,
+                    isDarkMode && styles.categoryTextDark,
+                    selectedCategory === item.id && styles.selectedCategoryText
+                  ]}
+                >
+                  {item.name}
+                </Text>
+              </TouchableOpacity>
+            )}
+            contentContainerStyle={styles.categoryList}
+          />
+        </View>
       </View>
       <FlatList
         data={filteredServices}
@@ -919,11 +935,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    backgroundColor: '#fff',
+    backgroundColor: '#f8f9fa', // Même couleur que le container
   },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
+    color: '#4F8EF7', // Couleur bleue pour ServiceBooking
+  },
+  titleSection: {
+    flex: 1,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+    fontStyle: 'italic',
   },
   searchInput: {
     backgroundColor: '#fff',
@@ -946,10 +972,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   categoryButton: {
-    paddingHorizontal: 20,  // Augmenté de 16 à 20
-    paddingVertical: 12,    // Augmenté de 8 à 12
-    borderRadius: 24,       // Augmenté de 20 à 24
-    marginRight: 12,        // Augmenté de 10 à 12
+    paddingHorizontal: 14,  // Réduit de 20 à 14
+    paddingVertical: 8,     // Réduit de 12 à 8
+    borderRadius: 20,       // Réduit de 24 à 20
+    marginRight: 8,         // Réduit de 12 à 8
     backgroundColor: '#f1f1f1',
     shadowColor: '#000',    // Ajout d'une ombre légère
     shadowOffset: { width: 0, height: 1 },
@@ -961,7 +987,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#3498db',
   },
   categoryText: {
-    fontSize: 16,           // Augmenté de 14 à 16
+    fontSize: 14,           // Réduit de 16 à 14
     color: '#444',          // Couleur plus foncée pour une meilleure lisibilité
     fontWeight: '500',      // Ajout d'un poids de police plus important
   },
@@ -1505,15 +1531,39 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
   },
+  // Nouveaux styles pour la section filtres
+  filtersSection: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  filtersHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  filtersIcon: {
+    marginRight: 6,
+  },
+  filtersTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
   // Styles pour le mode sombre
   containerDark: {
     backgroundColor: '#111827', // gray-900
   },
   headerDark: {
-    backgroundColor: '#1F2937', // gray-800
+    backgroundColor: '#111827', // gray-900 - Même couleur que le container dark
   },
   titleDark: {
-    color: '#FFFFFF',
+    color: '#60A5FA', // Bleu plus clair pour le mode sombre
+  },
+  subtitleDark: {
+    color: '#9CA3AF', // gray-400
   },
   searchInputDark: {
     backgroundColor: '#374151', // gray-700
@@ -1563,6 +1613,14 @@ const styles = StyleSheet.create({
   },
   buttonDark: {
     backgroundColor: '#374151', // gray-700
+  },
+  // Styles dark pour la section filtres
+  filtersSectionDark: {
+    backgroundColor: '#1F2937', // gray-800
+    borderBottomColor: '#374151', // gray-700
+  },
+  filtersTitleDark: {
+    color: '#FFFFFF',
   },
 });
 

@@ -79,20 +79,23 @@ const TabNavigator = () => {
           display: 'none',
         },
         tabBarStyle: {
-          height: 60,
+          height: 80, // Augmenté de 70 à 80 pour les nouvelles icônes
           backgroundColor: isDarkMode ? '#1F2937' : '#fff',
           borderTopColor: isDarkMode ? '#374151' : '#e0e0e0',
           borderTopWidth: 1,
-          paddingTop: 5,
-          paddingBottom: 5,
+          paddingTop: 10, // Augmenté de 8 à 10
+          paddingBottom: 10, // Augmenté de 8 à 10
           elevation: 10,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: -2 },
           shadowOpacity: 0.12,
           shadowRadius: 5,
+          position: 'absolute', // Assurez-vous qu'elle soit positionnée correctement
+          bottom: 0, // Fixée en bas
         },
         tabBarItemStyle: {
-          paddingVertical: 3,
+          paddingVertical: 5, // Augmenté de 3 à 5
+          marginBottom: 2, // Ajout d'une marge en bas
         },
       })}
     >

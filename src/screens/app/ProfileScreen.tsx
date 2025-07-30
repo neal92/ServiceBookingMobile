@@ -20,7 +20,10 @@ const ProfileScreen: React.FC = () => {
   return (
     <SafeAreaView style={[styles.container, isDarkMode && styles.containerDark]}>
       <View style={[styles.header, isDarkMode && styles.headerDark]}>
-        <Text style={[styles.title, isDarkMode && styles.titleDark]}>Profil</Text>
+        <View style={styles.titleSection}>
+          <Text style={[styles.title, isDarkMode && styles.titleDark]}>ServiceBooking</Text>
+          <Text style={[styles.subtitle, isDarkMode && styles.subtitleDark]}>Simplifiez votre gestion de rendez-vous</Text>
+        </View>
         <TouchableOpacity>
           <Ionicons name="settings-outline" size={24} color={isDarkMode ? "#fff" : "#333"} />
         </TouchableOpacity>
@@ -83,7 +86,13 @@ const ProfileScreen: React.FC = () => {
             title="Déconnexion" 
             onPress={handleLogout}
             variant="outline"
-            style={styles.logoutButton}
+            style={{
+              backgroundColor: 'transparent',
+              borderColor: isDarkMode ? '#ef4444' : '#e74c3c',
+            }}
+            textStyle={{
+              color: isDarkMode ? '#ef4444' : '#e74c3c',
+            }}
           />
         </View>
       </ScrollView>
@@ -101,14 +110,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    backgroundColor: '#fff',
+    backgroundColor: '#f8f9fa', // Même couleur que le container
   },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
+    color: '#4F8EF7', // Couleur bleue pour ServiceBooking
+  },
+  titleSection: {
+    flex: 1,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+    fontStyle: 'italic',
   },
   content: {
-    paddingBottom: 30,
+    paddingBottom: 100, // Augmenté de 90 à 100 pour éviter que la tabBar cache le contenu
   },
   profileSection: {
     alignItems: 'center',
@@ -160,22 +179,22 @@ const styles = StyleSheet.create({
     fontWeight: '500', // Ajout d'un poids de police plus important
   },
   logoutContainer: {
-    marginTop: 30,
+    marginTop: 40, // Augmenté de 30 à 40 pour plus d'espace
     paddingHorizontal: 16,
-  },
-  logoutButton: {
-    backgroundColor: 'transparent',
-    borderColor: '#e74c3c',
+    marginBottom: 20, // Ajout d'une marge en bas
   },
   // Styles pour le mode sombre
   containerDark: {
     backgroundColor: '#111827', // gray-900
   },
   headerDark: {
-    backgroundColor: '#1F2937', // gray-800
+    backgroundColor: '#111827', // gray-900 - Même couleur que le container dark
   },
   titleDark: {
-    color: '#FFFFFF',
+    color: '#60A5FA', // Bleu plus clair pour le mode sombre
+  },
+  subtitleDark: {
+    color: '#9CA3AF', // gray-400
   },
   contentDark: {
     backgroundColor: '#111827', // gray-900

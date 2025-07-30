@@ -2,6 +2,7 @@ import React, { useState, useContext } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Image, KeyboardAvoidingView, Platform } from 'react-native';
 import { TextInput, Button } from 'react-native-paper';
 import { AuthContext } from '../../contexts/AuthContext';
+import { ThemeContext } from '../../contexts/ThemeContext';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -10,6 +11,20 @@ const LoginScreen = ({ navigation }: any) => {
   const [password, setPassword] = useState('');
   const [secureTextEntry, setSecureTextEntry] = useState(true);
   const { login, error, loading } = useContext(AuthContext);
+  const { isDarkMode } = useContext(ThemeContext);
+
+  // Thème pour les TextInput
+  const inputTheme = {
+    colors: {
+      primary: isDarkMode ? '#60A5FA' : '#1a73e8',
+      background: isDarkMode ? '#374151' : '#fff',
+      surface: isDarkMode ? '#374151' : '#fff',
+      onSurface: isDarkMode ? '#FFFFFF' : '#000',
+      onSurfaceVariant: isDarkMode ? '#9CA3AF' : '#666',
+      placeholder: isDarkMode ? '#9CA3AF' : '#666',
+      outline: isDarkMode ? '#4B5563' : '#ccc',
+    }
+  };
 
   const handleLogin = async () => {
     try {
@@ -37,10 +52,10 @@ const LoginScreen = ({ navigation }: any) => {
 
   return (
     <KeyboardAvoidingView 
-      style={styles.container}
+      style={[styles.container, isDarkMode && styles.containerDark]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <StatusBar style="dark" />
+      <StatusBar style={isDarkMode ? "light" : "dark"} />
       <ScrollView contentContainerStyle={styles.scrollView}>
         <View style={styles.logoContainer}>
           <Image
@@ -48,11 +63,11 @@ const LoginScreen = ({ navigation }: any) => {
             style={styles.logo}
             resizeMode="contain"
           />
-          <Text style={styles.title}>ServiceBooking</Text>
+          <Text style={[styles.title, isDarkMode && styles.titleDark]}>ServiceBooking</Text>
         </View>
 
-        <View style={styles.formContainer}>
-          <Text style={styles.headerText}>Connexion</Text>
+        <View style={[styles.formContainer, isDarkMode && styles.formContainerDark]}>
+          <Text style={[styles.headerText, isDarkMode && styles.headerTextDark]}>Connexion</Text>
           
           {error && (
             <View style={styles.errorContainer}>
@@ -67,6 +82,7 @@ const LoginScreen = ({ navigation }: any) => {
             style={styles.input}
             autoCapitalize="none"
             keyboardType="email-address"
+            theme={inputTheme}
           />
           
           <TextInput
@@ -81,22 +97,24 @@ const LoginScreen = ({ navigation }: any) => {
               />
             }
             style={styles.input}
+            theme={inputTheme}
           />
           
           <Button
             mode="contained"
             onPress={handleLogin}
-            style={styles.button}
+            style={[styles.button, isDarkMode && styles.buttonDark]}
             loading={loading}
             disabled={loading}
+            buttonColor={isDarkMode ? '#60A5FA' : '#1a73e8'}
           >
             Se connecter
           </Button>
           
           <View style={styles.registerContainer}>
-            <Text style={styles.registerText}>Vous n'avez pas de compte ?</Text>
+            <Text style={[styles.registerText, isDarkMode && styles.registerTextDark]}>Vous n'avez pas de compte ?</Text>
             <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-              <Text style={styles.registerLink}>S'inscrire</Text>
+              <Text style={[styles.registerLink, isDarkMode && styles.registerLinkDark]}>S'inscrire</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -180,6 +198,28 @@ const styles = StyleSheet.create({
   registerLink: {
     color: '#1a73e8',
     fontWeight: '700',
+  },
+  // Styles pour le mode sombre
+  containerDark: {
+    backgroundColor: '#111827', // gray-900
+  },
+  titleDark: {
+    color: '#FFFFFF',
+  },
+  formContainerDark: {
+    backgroundColor: '#1F2937', // gray-800
+  },
+  headerTextDark: {
+    color: '#FFFFFF',
+  },
+  buttonDark: {
+    backgroundColor: '#60A5FA', // blue-400
+  },
+  registerTextDark: {
+    color: '#9CA3AF', // gray-400
+  },
+  registerLinkDark: {
+    color: '#60A5FA', // blue-400
   },
 });
 
