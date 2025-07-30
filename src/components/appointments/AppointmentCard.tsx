@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Appointment } from '../../types/index';
 import { formatDate, formatTime } from '../../utils/date';
+import { ThemeContext } from '../../contexts/ThemeContext';
 
 interface AppointmentCardProps {
   appointment: Appointment;
@@ -14,6 +15,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({
   onPress, 
   onCancel 
 }) => {
+  const { isDarkMode } = useContext(ThemeContext);
   const { id, service, date, status } = appointment;
   
   // Déterminer la couleur du statut
@@ -38,37 +40,37 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({
 
   return (
     <TouchableOpacity 
-      style={styles.container} 
+      style={[styles.container, isDarkMode && styles.containerDark]} 
       onPress={() => onPress && onPress(appointment)}
       disabled={status === 'cancelled'}
     >
       <View style={styles.content}>
-        <Text style={styles.serviceName}>{service?.name || 'Service non défini'}</Text>
+        <Text style={[styles.serviceName, isDarkMode && styles.serviceNameDark]}>{service?.name || 'Service non défini'}</Text>
         <View style={styles.row}>
-          <Text style={styles.dateTime}>{formatDate(date)} à {formatTime(date)}</Text>
+          <Text style={[styles.dateTime, isDarkMode && styles.dateTimeDark]}>{formatDate(date)} à {formatTime(date)}</Text>
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor() }]}>
             <Text style={styles.statusText}>{getStatusText()}</Text>
           </View>
         </View>
-        <Text style={styles.price}>{service?.price ? `${service.price} €` : 'Prix non défini'}</Text>
+        <Text style={[styles.price, isDarkMode && styles.priceDark]}>{service?.price ? `${service.price} €` : 'Prix non défini'}</Text>
         {/* Affichage du bouton Annuler ou Supprimer selon le statut */}
         {status === 'cancelled' ? (
           <TouchableOpacity 
-            style={[styles.cancelButton, { borderColor: '#e74c3c' }]}
+            style={[styles.cancelButton, { borderColor: '#e74c3c' }, isDarkMode && styles.cancelButtonDark]}
             onPress={() => onCancel && onCancel(id)}
           >
             <Text style={[styles.cancelButtonText, { color: '#e74c3c' }]}>Supprimer</Text>
           </TouchableOpacity>
         ) : status === 'completed' ? (
           <TouchableOpacity 
-            style={[styles.cancelButton, { borderColor: '#e74c3c' }]}
+            style={[styles.cancelButton, { borderColor: '#e74c3c' }, isDarkMode && styles.cancelButtonDark]}
             onPress={() => onCancel && onCancel(id)}
           >
             <Text style={[styles.cancelButtonText, { color: '#e74c3c' }]}>Supprimer</Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity 
-            style={styles.cancelButton}
+            style={[styles.cancelButton, isDarkMode && styles.cancelButtonDark]}
             onPress={() => onCancel && onCancel(id)}
           >
             <Text style={styles.cancelButtonText}>Annuler</Text>
@@ -137,5 +139,22 @@ const styles = StyleSheet.create({
     color: '#dc3545',
     fontSize: 14,
     fontWeight: '500',
+  },
+  // Styles pour le mode sombre
+  containerDark: {
+    backgroundColor: '#1F2937', // gray-800
+  },
+  serviceNameDark: {
+    color: '#FFFFFF',
+  },
+  dateTimeDark: {
+    color: '#9CA3AF', // gray-400
+  },
+  priceDark: {
+    color: '#60A5FA', // blue-400
+  },
+  cancelButtonDark: {
+    backgroundColor: '#374151', // gray-700
+    borderColor: '#4B5563', // gray-600
   },
 });

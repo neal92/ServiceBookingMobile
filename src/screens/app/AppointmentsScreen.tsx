@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, Alert, TouchableOpacity } from 'react-native';
 import { useAuth } from '../../hooks/useAuth';
+import { ThemeContext } from '../../contexts/ThemeContext';
 import { AppointmentList } from '../../components/appointments/AppointmentList';
 import { Appointment } from '../../types/index';
 import { getUserAppointments, deleteAppointment } from '../../api/appointments';
@@ -8,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 const AppointmentsScreen: React.FC = () => {
   const { token } = useAuth();
+  const { isDarkMode } = useContext(ThemeContext);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
@@ -116,22 +118,27 @@ const AppointmentsScreen: React.FC = () => {
   });
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Mes rendez-vous</Text>
+    <SafeAreaView style={[styles.container, isDarkMode && styles.containerDark]}>
+      <View style={[styles.header, isDarkMode && styles.headerDark]}>
+        <Text style={[styles.title, isDarkMode && styles.titleDark]}>Mes rendez-vous</Text>
         <TouchableOpacity onPress={loadAppointments}>
-          <Ionicons name="refresh" size={24} color="#3498db" />
+          <Ionicons name="refresh" size={24} color={isDarkMode ? "#60A5FA" : "#3498db"} />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.tabContainer}>
+      <View style={[styles.tabContainer, isDarkMode && styles.tabContainerDark]}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'upcoming' && styles.activeTab]}
+          style={[
+            styles.tab, 
+            isDarkMode && styles.tabDark,
+            activeTab === 'upcoming' && styles.activeTab
+          ]}
           onPress={() => setActiveTab('upcoming')}
         >
           <Text 
             style={[
-              styles.tabText, 
+              styles.tabText,
+              isDarkMode && styles.tabTextDark,
               activeTab === 'upcoming' && styles.activeTabText
             ]}
           >
@@ -216,6 +223,26 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     flex: 1,
+  },
+  // Styles pour le mode sombre
+  containerDark: {
+    backgroundColor: '#111827', // gray-900
+  },
+  headerDark: {
+    backgroundColor: '#1F2937', // gray-800
+  },
+  titleDark: {
+    color: '#FFFFFF',
+  },
+  tabContainerDark: {
+    backgroundColor: '#1F2937', // gray-800
+    borderBottomColor: '#374151', // gray-700
+  },
+  tabDark: {
+    borderBottomColor: 'transparent',
+  },
+  tabTextDark: {
+    color: '#9CA3AF', // gray-400
   },
 });
 

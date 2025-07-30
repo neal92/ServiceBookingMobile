@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, FlatList, TouchableOpacity, Image, TextInput, Alert, Modal, ScrollView } from 'react-native';
 import { Card, Title, Paragraph, Button } from 'react-native-paper';
 import { useAuth } from '../../hooks/useAuth';
+import { ThemeContext } from '../../contexts/ThemeContext';
 import { Service } from '../../types/index';
 import { Appointment } from '../../types/index';
 import { getAllServices, getAllCategories } from '../../api/services';
@@ -15,6 +16,7 @@ import { API_URL } from '../../config/api';
 const ServicesScreen: React.FC = () => {
   const navigation = useNavigation();
   const { token, user } = useAuth();
+  const { isDarkMode } = useContext(ThemeContext);
   const [services, setServices] = useState<Service[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -394,11 +396,18 @@ const ServicesScreen: React.FC = () => {
 
   if (!user) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8f9fa' }}>
-        <Card style={[styles.card, { width: '90%', maxWidth: 400, padding: 8 }]}> 
+      <View style={[
+        { flex: 1, justifyContent: 'center', alignItems: 'center' },
+        { backgroundColor: isDarkMode ? '#111827' : '#f8f9fa' }
+      ]}>
+        <Card style={[
+          styles.card, 
+          isDarkMode && styles.serviceCardDark,
+          { width: '90%', maxWidth: 400, padding: 8 }
+        ]}> 
           <Card.Content>
-            <Title style={{ color: '#333' }}>OUPS !</Title>
-            <Paragraph style={{ color: '#333' }}>
+            <Title style={[{ color: '#333' }, isDarkMode && styles.serviceNameDark]}>OUPS !</Title>
+            <Paragraph style={[{ color: '#333' }, isDarkMode && styles.serviceDescriptionDark]}>
               Veuillez vous connecter pour voir les services disponibles.
             </Paragraph>
           </Card.Content>
@@ -455,28 +464,29 @@ const ServicesScreen: React.FC = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Services</Text>
+    <SafeAreaView style={[styles.container, isDarkMode && styles.containerDark]}>
+      <View style={[styles.header, isDarkMode && styles.headerDark]}>
+        <Text style={[styles.title, isDarkMode && styles.titleDark]}>Services</Text>
         <View style={{ flexDirection: 'row' }}>
           <TouchableOpacity onPress={testConnection} style={{ marginRight: 15 }}>
-            <Ionicons name="refresh" size={24} color="#3498db" />
+            <Ionicons name="refresh" size={24} color={isDarkMode ? "#60A5FA" : "#3498db"} />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setShowSearch(s => !s)}>
-            <Ionicons name="search" size={24} color="#333" />
+            <Ionicons name="search" size={24} color={isDarkMode ? "#fff" : "#333"} />
           </TouchableOpacity>
         </View>
       </View>
       {showSearch && (
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, isDarkMode && styles.searchInputDark]}
           placeholder="Rechercher un service..."
+          placeholderTextColor={isDarkMode ? "#9CA3AF" : "#999"}
           value={search}
           onChangeText={setSearch}
           autoFocus
         />
       )}
-      <View style={styles.categoryContainer}>
+      <View style={[styles.categoryContainer, isDarkMode && styles.categoryContainerDark]}>
         <FlatList
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -486,6 +496,7 @@ const ServicesScreen: React.FC = () => {
             <TouchableOpacity
               style={[
                 styles.categoryButton,
+                isDarkMode && styles.categoryButtonDark,
                 selectedCategory === item.id && styles.selectedCategory
               ]}
               onPress={() => setSelectedCategory(item.id)}
@@ -493,6 +504,7 @@ const ServicesScreen: React.FC = () => {
               <Text 
                 style={[
                   styles.categoryText,
+                  isDarkMode && styles.categoryTextDark,
                   selectedCategory === item.id && styles.selectedCategoryText
                 ]}
               >
@@ -508,7 +520,7 @@ const ServicesScreen: React.FC = () => {
         keyExtractor={(item) => item.id}
         renderItem={({ item }) =>
           item ? (
-            <TouchableOpacity style={styles.serviceCard}>
+            <TouchableOpacity style={[styles.serviceCard, isDarkMode && styles.serviceCardDark]}>
               {getServiceImageUrl(item) ? (
                 <Image 
                   source={{ uri: getServiceImageUrl(item)! }} 
@@ -522,20 +534,32 @@ const ServicesScreen: React.FC = () => {
                   }}
                 />
               ) : (
-                <View style={[styles.serviceImage, { backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center' }]}>
+                <View style={[
+                  styles.serviceImage, 
+                  { 
+                    backgroundColor: isDarkMode ? '#374151' : '#f0f0f0', 
+                    justifyContent: 'center', 
+                    alignItems: 'center' 
+                  }
+                ]}>
                   <Text style={{ fontSize: 24 }}>📷</Text>
                 </View>
               )}
               <View style={styles.serviceContent}>
                 <View style={styles.serviceInfo}>
-                  <Text style={styles.serviceName}>{item.name}</Text>
-                  <Text style={styles.servicePrice}>{item.price} €</Text>
+                  <Text style={[styles.serviceName, isDarkMode && styles.serviceNameDark]}>{item.name}</Text>
+                  <Text style={[styles.servicePrice, isDarkMode && styles.servicePriceDark]}>{item.price} €</Text>
                 </View>
                 {/* Affichage du nom de la catégorie associée, en couleur bleue et gras */}
-                <Text style={{ color: '#3498db', fontWeight: 'bold', fontSize: 13, marginBottom: 4 }}>
+                <Text style={{ 
+                  color: isDarkMode ? '#60A5FA' : '#3498db', 
+                  fontWeight: 'bold', 
+                  fontSize: 13, 
+                  marginBottom: 4 
+                }}>
                   {getCategoryName((item as ServiceWithCategoryId).categoryId)}
                 </Text>
-                <Text style={styles.serviceDescription} numberOfLines={2}>
+                <Text style={[styles.serviceDescription, isDarkMode && styles.serviceDescriptionDark]} numberOfLines={2}>
                   {item.description}
                 </Text>
                 <View style={styles.serviceFooter}>
@@ -564,9 +588,9 @@ const ServicesScreen: React.FC = () => {
         transparent={true}
         onRequestClose={() => setShowCalendarModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.calendarModalContent}>
-            <Text style={styles.modalTitle}>Choisir une date</Text>
+        <View style={[styles.modalOverlay, isDarkMode && styles.modalOverlayDark]}>
+          <View style={[styles.calendarModalContent, isDarkMode && styles.calendarModalContentDark]}>
+            <Text style={[styles.modalTitle, isDarkMode && styles.modalTitleDark]}>Choisir une date</Text>
 
             {/* En-tête du calendrier */}
             <View style={styles.calendarHeader}>
@@ -680,9 +704,9 @@ const ServicesScreen: React.FC = () => {
         transparent={true}
         onRequestClose={() => setShowBookingModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Choisir un créneau</Text>
+        <View style={[styles.modalOverlay, isDarkMode && styles.modalOverlayDark]}>
+          <View style={[styles.modalContent, isDarkMode && styles.modalContentDark]}>
+            <Text style={[styles.modalTitle, isDarkMode && styles.modalTitleDark]}>Choisir un créneau</Text>
             
             {selectedService && (
               <View style={styles.serviceInfoModal}>
@@ -1480,6 +1504,65 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     flex: 1,
     textAlign: 'center',
+  },
+  // Styles pour le mode sombre
+  containerDark: {
+    backgroundColor: '#111827', // gray-900
+  },
+  headerDark: {
+    backgroundColor: '#1F2937', // gray-800
+  },
+  titleDark: {
+    color: '#FFFFFF',
+  },
+  searchInputDark: {
+    backgroundColor: '#374151', // gray-700
+    borderColor: '#4B5563', // gray-600
+    color: '#FFFFFF',
+  },
+  categoryContainerDark: {
+    backgroundColor: '#1F2937', // gray-800
+    borderBottomColor: '#374151', // gray-700
+  },
+  categoryButtonDark: {
+    backgroundColor: '#374151', // gray-700
+  },
+  categoryTextDark: {
+    color: '#9CA3AF', // gray-400
+  },
+  serviceCardDark: {
+    backgroundColor: '#1F2937', // gray-800
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  serviceNameDark: {
+    color: '#FFFFFF',
+  },
+  serviceDescriptionDark: {
+    color: '#9CA3AF', // gray-400
+  },
+  servicePriceDark: {
+    color: '#60A5FA', // blue-400
+  },
+  modalOverlayDark: {
+    backgroundColor: 'rgba(0,0,0,0.8)',
+  },
+  modalContentDark: {
+    backgroundColor: '#1F2937', // gray-800
+  },
+  calendarModalContentDark: {
+    backgroundColor: '#1F2937', // gray-800
+  },
+  modalTitleDark: {
+    color: '#FFFFFF',
+  },
+  textDark: {
+    color: '#FFFFFF',
+  },
+  textSecondaryDark: {
+    color: '#9CA3AF', // gray-400
+  },
+  buttonDark: {
+    backgroundColor: '#374151', // gray-700
   },
 });
 

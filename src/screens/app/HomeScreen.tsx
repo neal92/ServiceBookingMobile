@@ -2,6 +2,7 @@ import React, { useContext, useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView, FlatList, Image } from 'react-native';
 import { Card, Title, Paragraph, Button, IconButton } from 'react-native-paper';
 import { AuthContext } from '../../contexts/AuthContext';
+import { ThemeContext } from '../../contexts/ThemeContext';
 import { getUserAppointments } from '../../api/appointments';
 import { getAllServices } from '../../api/services';
 import { getUserNotifications, deleteNotification } from '../../api/notifications';
@@ -12,6 +13,7 @@ import { API_URL } from '../../config/api';
 
 const HomeScreen = ({ navigation }: any) => {
   const { user, token } = useContext(AuthContext);
+  const { theme, toggleTheme, isDarkMode } = useContext(ThemeContext);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState('09:00');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -307,44 +309,54 @@ const HomeScreen = ({ navigation }: any) => {
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={[styles.container, isDarkMode && styles.containerDark]}>
       <View style={styles.header}>
-        <Text style={styles.welcome}>
+        <Text style={[styles.welcome, isDarkMode && styles.textDark]}>
           {user ? `Bienvenue ${user.firstName}!` : 'Bienvenue'}
         </Text>
+        <TouchableOpacity
+          style={[styles.themeModeButton, isDarkMode && styles.themeModeButtonDark]}
+          onPress={toggleTheme}
+        >
+          <Ionicons 
+            name={isDarkMode ? "sunny-outline" : "moon-outline"}
+            size={24} 
+            color="#4F8EF7"
+          />
+        </TouchableOpacity>
       </View>
       
       {/* Section des statistiques des rendez-vous */}
       {user && (
-        <View style={styles.statsSection}>
+        <View style={[styles.statsSection, isDarkMode && styles.statsSectionDark]}>
           <View style={styles.statItem}>
             <Text style={styles.statNumber}>{totalAppointments}</Text>
-            <Text style={styles.statLabel}>Rendez-vous</Text>
+            <Text style={[styles.statLabel, isDarkMode && styles.textSecondaryDark]}>Rendez-vous</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{completedAppointments}</Text>
-            <Text style={styles.statLabel}>Complétés</Text>
+            <Text style={[styles.statNumber, isDarkMode && styles.textDark]}>{completedAppointments}</Text>
+            <Text style={[styles.statLabel, isDarkMode && styles.textSecondaryDark]}>Complétés</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{upcomingAppointments}</Text>
-            <Text style={styles.statLabel}>À venir</Text>
+            <Text style={[styles.statNumber, isDarkMode && styles.textDark]}>{upcomingAppointments}</Text>
+            <Text style={[styles.statLabel, isDarkMode && styles.textSecondaryDark]}>À venir</Text>
           </View>
         </View>
       )}
 
   {/*Section calendriers */}
 
-      <Card style={styles.card}>
-        <Card.Content>
+      <Card style={[styles.card, isDarkMode && styles.cardDark]}>
+        <Card.Content style={isDarkMode && styles.cardContentDark}>
           {/* En-tête de l'agenda avec titre, mois, boutons de navigation et mode */}
           <View style={styles.calendarHeader}>
             <View style={styles.calendarTitleContainer}>
-              <Text style={styles.sectionTitle}>
+              <Text style={[styles.sectionTitle, isDarkMode && styles.sectionTitleDark]}>
                 📅 Agenda {viewMode === 'week' ? 'Semaine' : 'Mois'}
               </Text>
-              <Text style={styles.monthLabel}>
+              <Text style={[styles.monthLabel, isDarkMode && styles.monthLabelDark]}>
                 {viewMode === 'week' 
                   ? `${currentWeekStartDate.toLocaleDateString('fr-FR', { month: 'long' })} - ${
                       new Date(currentWeekStartDate.getTime() + 6 * 24 * 60 * 60 * 1000).toLocaleDateString('fr-FR', 
@@ -356,7 +368,7 @@ const HomeScreen = ({ navigation }: any) => {
             </View>
             <View style={styles.calendarControls}>
               <TouchableOpacity 
-                style={styles.viewModeButton} 
+                style={[styles.viewModeButton, isDarkMode && styles.buttonDark]} 
                 onPress={() => setViewMode(viewMode === 'week' ? 'month' : 'week')}
                 activeOpacity={0.7}
               >
@@ -364,11 +376,11 @@ const HomeScreen = ({ navigation }: any) => {
                   <Ionicons 
                     name={viewMode === 'week' ? 'calendar-outline' : 'calendar'} 
                     size={20} 
-                    color="#4F8EF7" 
+                    color={isDarkMode ? "#60A5FA" : "#4F8EF7"} 
                   />
                   <Text style={{
                     marginLeft: 4,
-                    color: '#4F8EF7',
+                    color: isDarkMode ? "#60A5FA" : "#4F8EF7",
                     fontSize: 12,
                     fontWeight: '600',
                   }}>
@@ -385,7 +397,7 @@ const HomeScreen = ({ navigation }: any) => {
                 <View style={styles.weekNavigation}>
                   <TouchableOpacity 
                     onPress={() => navigateWeek('prev')} 
-                    style={styles.navButton}
+                    style={[styles.navButton, isDarkMode && styles.navButtonDark]}
                     activeOpacity={0.7}
                   >
                     <Ionicons name="chevron-back-circle" size={20} color="#4F8EF7" />
@@ -403,6 +415,7 @@ const HomeScreen = ({ navigation }: any) => {
                         <TouchableOpacity
                           style={[
                             styles.dayButton, 
+                            isDarkMode && styles.dayButtonDark,
                             isToday(item) && styles.todayButton,
                             item.toDateString() === selectedDate.toDateString() && styles.dayButtonSelected
                           ]}
@@ -410,12 +423,14 @@ const HomeScreen = ({ navigation }: any) => {
                         >
                           <Text style={[
                             styles.dayLabel,
+                            isDarkMode && styles.textDark,
                             item.toDateString() === selectedDate.toDateString() && { color: '#fff' }
                           ]}>
                             {item.toLocaleDateString('fr-FR', { weekday: 'short' })}
                           </Text>
                           <Text style={[
                             styles.dayNumber,
+                            isDarkMode && styles.dayNumberDark,
                             item.toDateString() === selectedDate.toDateString() && { color: '#fff' }
                           ]}>{item.getDate()}</Text>
                         </TouchableOpacity>
@@ -426,7 +441,7 @@ const HomeScreen = ({ navigation }: any) => {
 
                   <TouchableOpacity 
                     onPress={() => navigateWeek('next')} 
-                    style={styles.navButton}
+                    style={[styles.navButton, isDarkMode && styles.navButtonDark]}
                     activeOpacity={0.7}
                   >
                     <Ionicons name="chevron-forward-circle" size={20} color="#4F8EF7" />
@@ -434,27 +449,27 @@ const HomeScreen = ({ navigation }: any) => {
                 </View>
               ) : (
                 // Vue par mois - Vue en grille
-                <View style={styles.monthViewContainer}>
+                <View style={[styles.monthViewContainer, isDarkMode && styles.monthViewContainerDark]}>
                   {/* Navigation des mois directement dans le conteneur du calendrier */}
                   <View style={styles.monthNavigation}>
                     <TouchableOpacity 
                       onPress={() => navigateWeek('prev')} 
-                      style={styles.monthNavButton}
+                      style={[styles.monthNavButton, isDarkMode && styles.navButtonDark]}
                       activeOpacity={0.7}
                     >
-                      <Ionicons name="chevron-back-circle" size={20} color="#4F8EF7" />
+                      <Ionicons name="chevron-back-circle" size={20} color={isDarkMode ? "#60A5FA" : "#4F8EF7"} />
                     </TouchableOpacity>
                     
-                    <Text style={styles.currentMonthText}>
+                    <Text style={[styles.currentMonthText, isDarkMode && styles.currentMonthTextDark]}>
                       {selectedDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
                     </Text>
                     
                     <TouchableOpacity 
                       onPress={() => navigateWeek('next')} 
-                      style={styles.monthNavButton}
+                      style={[styles.monthNavButton, isDarkMode && styles.navButtonDark]}
                       activeOpacity={0.7}
                     >
-                      <Ionicons name="chevron-forward-circle" size={20} color="#4F8EF7" />
+                      <Ionicons name="chevron-forward-circle" size={20} color={isDarkMode ? "#60A5FA" : "#4F8EF7"} />
                     </TouchableOpacity>
                   </View>
 
@@ -462,7 +477,7 @@ const HomeScreen = ({ navigation }: any) => {
                   <View style={styles.weekDaysHeader}>
                     {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((dayName, index) => (
                       <View key={`header-${index}`} style={styles.dayNameHeader}>
-                        <Text style={styles.dayNameText}>{dayName}</Text>
+                        <Text style={[styles.dayNameText, isDarkMode && styles.dayNameTextDark]}>{dayName}</Text>
                       </View>
                     ))}
                   </View>
@@ -503,6 +518,7 @@ const HomeScreen = ({ navigation }: any) => {
                               >
                                 <Text style={[
                                   styles.monthViewDayLabel,
+                                  isDarkMode && styles.monthViewDayLabelDark,
                                   isToday(dayItem) && styles.monthViewTodayText,
                                   dayItem.toDateString() === selectedDate.toDateString() && styles.monthViewSelectedDayText
                                 ]}>
@@ -543,7 +559,12 @@ const HomeScreen = ({ navigation }: any) => {
                   </Text>
                   <Button
                     mode="contained"
-                    style={[styles.button, { alignSelf: 'center', marginTop: 12 }]}
+                    style={[
+                      styles.button, 
+                      { alignSelf: 'center', marginTop: 12 },
+                      isDarkMode && styles.buttonDark
+                    ]}
+                    labelStyle={isDarkMode && styles.buttonTextDark}
                     onPress={() => navigation.navigate('ServicesTab')}
                   >
                     Prendre un rendez-vous
@@ -577,13 +598,13 @@ const HomeScreen = ({ navigation }: any) => {
       
       {/* Section Aperçu des activités du prestataire */}
       {user && services.length > 0 && (
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text style={styles.sectionTitle}>
+        <Card style={[styles.card, isDarkMode && styles.cardDark]}>
+          <Card.Content style={isDarkMode && styles.cardContentDark}>
+            <Text style={[styles.sectionTitle, isDarkMode && styles.sectionTitleDark]}>
               👁️ Aperçu
             </Text>
             {getProviderActivities().map((activity, index) => (
-              <View key={activity.id} style={styles.activityItem}>
+              <View key={activity.id} style={[styles.activityItem, isDarkMode && styles.borderBottomDark]}>
                 {activity.imageUrl && activity.imageUrl !== 'null' ? (
                   <Image 
                     source={{ uri: activity.imageUrl }} 
@@ -598,18 +619,18 @@ const HomeScreen = ({ navigation }: any) => {
                     }}
                   />
                 ) : (
-                  <View style={styles.activityImagePlaceholder}>
+                  <View style={[styles.activityImagePlaceholder, isDarkMode && styles.activityImagePlaceholderDark]}>
                     <Text style={styles.activityIcon}>{activity.icon}</Text>
                   </View>
                 )}
                 <View style={styles.activityContent}>
-                  <Text style={styles.activityMessage}>{activity.message}</Text>
+                  <Text style={[styles.activityMessage, isDarkMode && styles.activityMessageDark]}>{activity.message}</Text>
                   {activity.serviceData && (
-                    <Text style={styles.activityServicePrice}>
+                    <Text style={[styles.activityServicePrice, isDarkMode && styles.activityServicePriceDark]}>
                       {activity.serviceData.price}€ • {activity.serviceData.duration} min
                     </Text>
                   )}
-                  <Text style={styles.activityTime}>Il y a {activity.time}</Text>
+                  <Text style={[styles.activityTime, isDarkMode && styles.activityTimeDark]}>Il y a {activity.time}</Text>
                 </View>
               </View>
             ))}
@@ -619,20 +640,20 @@ const HomeScreen = ({ navigation }: any) => {
 
       {/* Section Notifications */}
       {user && (
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text style={styles.sectionTitle}>
+        <Card style={[styles.card, isDarkMode && styles.cardDark]}>
+          <Card.Content style={isDarkMode && styles.cardContentDark}>
+            <Text style={[styles.sectionTitle, isDarkMode && styles.sectionTitleDark]}>
               🔔 Notifications
             </Text>
             {notifications.length === 0 ? (
-              <Text style={styles.noNotificationsText}>Aucune notification</Text>
+              <Text style={[styles.noNotificationsText, isDarkMode && styles.noNotificationsTextDark]}>Aucune notification</Text>
             ) : (
               notifications.map((notification) => (
-                <View key={notification.id} style={styles.notificationItem}>
+                <View key={notification.id} style={[styles.notificationItem, isDarkMode && styles.notificationItemDark]}>
                   <Text style={styles.notificationIcon}>{getNotificationIcon(notification.type)}</Text>
                   <View style={styles.notificationContent}>
-                    <Text style={styles.notificationMessage}>{notification.message}</Text>
-                    <Text style={styles.notificationTime}>Il y a {formatRelativeTime(notification.createdAt)}</Text>
+                    <Text style={[styles.notificationMessage, isDarkMode && styles.notificationMessageDark]}>{notification.message}</Text>
+                    <Text style={[styles.notificationTime, isDarkMode && styles.notificationTimeDark]}>Il y a {formatRelativeTime(notification.createdAt)}</Text>
                   </View>
                   <TouchableOpacity 
                     onPress={() => removeNotification(notification.id)}
@@ -657,6 +678,40 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
     padding: 16,
   },
+  containerDark: {
+    backgroundColor: '#111827', // gray-900
+  },
+  cardDark: {
+    backgroundColor: '#1F2937', // gray-800
+    borderColor: 'rgba(255,255,255,0.05)',
+  },
+  cardContentDark: {
+    backgroundColor: '#1F2937', // gray-800
+  },
+  statsSectionDark: {
+    backgroundColor: '#1F2937', // gray-800
+  },
+  monthViewContainerDark: {
+    backgroundColor: '#1F2937', // gray-800
+  },
+  buttonDark: {
+    backgroundColor: '#374151', // gray-700
+  },
+  buttonTextDark: {
+    color: '#fff',
+  },
+  sectionTitleDark: {
+    color: '#fff',
+  },
+  textDark: {
+    color: '#fff',
+  },
+  textSecondaryDark: {
+    color: '#9CA3AF', // gray-400
+  },
+  borderDark: {
+    borderColor: '#374151', // gray-700
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -666,6 +721,22 @@ const styles = StyleSheet.create({
   welcome: {
     fontSize: 22,
     fontWeight: 'bold',
+  },
+  themeModeButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#ebf3ff',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    borderWidth: 1,
+    borderColor: '#e0e9f7',
+  },
+  themeModeButtonDark: {
+    backgroundColor: '#374151', // gray-700
+    borderColor: '#4B5563', // gray-600
   },
   calendarHeader: {
     flexDirection: 'row',
@@ -685,6 +756,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontWeight: '500',
     letterSpacing: 0.2,
+  },
+  monthLabelDark: {
+    color: '#9CA3AF', // gray-400
   },
   calendarControls: {
     flexDirection: 'row',
@@ -719,6 +793,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
     shadowRadius: 2,
+  },
+  navButtonDark: {
+    backgroundColor: '#374151', // gray-700
   },
   monthViewEmptyDay: {
     backgroundColor: 'transparent',
@@ -759,6 +836,9 @@ const styles = StyleSheet.create({
     color: '#333',
     textTransform: 'capitalize',
   },
+  currentMonthTextDark: {
+    color: '#fff',
+  },
   weekDaysHeader: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -797,11 +877,17 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
   },
+  dayNameTextDark: {
+    color: '#9CA3AF', // gray-400
+  },
   monthViewDayLabel: {
     fontSize: 16,
     fontWeight: '500',
     color: '#333',
     textAlign: 'center',
+  },
+  monthViewDayLabelDark: {
+    color: '#fff',
   },
   avatar: {
     width: 40,
@@ -876,6 +962,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
   },
+  dayButtonDark: {
+    backgroundColor: '#374151', // gray-700
+  },
   // Style spécifique pour les jours sélectionnés dans la vue mensuelle
   dayButtonSelected: {
     backgroundColor: '#4F8EF7',
@@ -907,6 +996,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#222',
+  },
+  dayNumberDark: {
+    color: '#fff',
   },
   cardSchedule: {
     backgroundColor: '#fff',
@@ -1011,9 +1103,15 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 4,
   },
+  activityMessageDark: {
+    color: '#fff',
+  },
   activityTime: {
     fontSize: 13,
     color: '#666',
+  },
+  activityTimeDark: {
+    color: '#9CA3AF', // gray-400
   },
   activityImage: {
     width: 40,
@@ -1037,12 +1135,27 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 2,
   },
+  activityServicePriceDark: {
+    color: '#60A5FA', // Un bleu plus clair pour le mode sombre
+  },
+  activityImagePlaceholderDark: {
+    backgroundColor: '#374151', // gray-700
+  },
+  borderBottomDark: {
+    borderBottomColor: '#374151', // gray-700
+  },
+  noNotificationsTextDark: {
+    color: '#9CA3AF', // gray-400
+  },
   notificationItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
+  },
+  notificationItemDark: {
+    borderBottomColor: '#374151', // gray-700
   },
   notificationIcon: {
     fontSize: 20,
@@ -1059,9 +1172,15 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 4,
   },
+  notificationMessageDark: {
+    color: '#fff',
+  },
   notificationTime: {
     fontSize: 13,
     color: '#666',
+  },
+  notificationTimeDark: {
+    color: '#9CA3AF', // gray-400
   },
   removeButton: {
     padding: 4,
