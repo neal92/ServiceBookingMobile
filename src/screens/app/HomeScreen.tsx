@@ -580,7 +580,7 @@ const HomeScreen = ({ navigation }: any) => {
                     <View style={styles.appointmentBadgeContent}>
                       <Ionicons name="calendar-outline" size={22} color="#fff" style={styles.appointmentIcon} />
                       <Text style={styles.appointmentText}>
-                        {appointmentsOfDay.length === 1 ? 'Vous avez un rendez-vous aujourd\'hui ! ' : `Vous avez ${appointmentsOfDay.length} rendez-vous aujourd\'hui`}
+                        {appointmentsOfDay.length === 1 ? 'Vous avez un rendez-vous ce jour ! ' : `Vous avez ${appointmentsOfDay.length} rendez-vous ce jour`}
                       </Text>
                     </View>
                     <View style={styles.badgeDivider} />
