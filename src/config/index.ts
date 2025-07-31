@@ -1,5 +1,5 @@
 // Re-exporter les configurations de l'API
-export { API_URL } from '../utils/api';
+export { default as API_URL } from '../utils/api';
 
 // Vous pouvez ajouter d'autres configurations centralisées ici
 export const APP_CONFIG = {

@@ -73,3 +73,28 @@ export const isSameDay = (date1: Date, date2: Date): boolean => {
     date1.getDate() === date2.getDate()
   );
 };
+
+/**
+ * Formater une date avec une heure optionnelle
+ * @param date - Date à formater (string ISO ou Date)
+ * @param time - Heure séparée au format HH:mm (optionnel)
+ * @returns Date et heure formatées
+ */
+export const formatDateWithTime = (date: Date | string, time?: string): string => {
+  if (!date) return '';
+  
+  const formattedDate = formatDate(date);
+  
+  if (time) {
+    return `${formattedDate} à ${time}`;
+  }
+  
+  // Essayer d'extraire l'heure de la date
+  const dateObj = typeof date === 'string' ? parseISO(date) : date;
+  if (!isNaN(dateObj.getTime()) && dateObj.getHours() !== 0) {
+    return `${formattedDate} à ${formatTime(date)}`;
+  }
+  
+  // Si pas d'heure disponible, retourner seulement la date
+  return formattedDate;
+};

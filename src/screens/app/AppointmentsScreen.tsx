@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, Alert, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, Alert, TouchableOpacity, FlatList } from 'react-native';
 import { useAuth } from '../../hooks/useAuth';
 import { ThemeContext } from '../../contexts/ThemeContext';
 import { AppointmentList } from '../../components/appointments/AppointmentList';
@@ -13,6 +13,16 @@ const AppointmentsScreen: React.FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
+  const [statusFilter, setStatusFilter] = useState<string>('all'); // Filtre par statut
+
+  // Types de statuts disponibles
+  const statusOptions = [
+    { id: 'all', label: 'Tous', icon: 'list-outline' as const, color: '#666' },
+    { id: 'pending', label: 'En attente', icon: 'time-outline' as const, color: '#F59E0B' },
+    { id: 'confirmed', label: 'Confirmé', icon: 'checkmark-circle-outline' as const, color: '#10B981' },
+    { id: 'cancelled', label: 'Annulé', icon: 'close-circle-outline' as const, color: '#EF4444' },
+    { id: 'completed', label: 'Terminé', icon: 'checkmark-done-outline' as const, color: '#6366F1' }
+  ];
 
   useEffect(() => {
     loadAppointments();
@@ -24,9 +34,13 @@ const AppointmentsScreen: React.FC = () => {
     try {
       setIsLoading(true);
       const response = await getUserAppointments(token);
+      console.log('📅 Données reçues de l\'API:', response.slice(0, 1)); // Debug: voir la structure des données
+      
       // Adapter les rendez-vous pour fournir un champ 'service' objet
       const adapted = response.map((apt: any) => ({
         ...apt,
+        // Préserver le champ time s'il existe
+        time: apt.time || apt.appointmentTime || null,
         service: {
           id: apt.serviceId?.toString() ?? '',
           name: apt.serviceName ?? '',
@@ -37,6 +51,7 @@ const AppointmentsScreen: React.FC = () => {
           imageUrl: '',
         },
       }));
+      console.log('📅 Données adaptées:', adapted.slice(0, 1)); // Debug: voir les données adaptées
       setAppointments(adapted);
     } catch (error) {
       console.error('Erreur lors du chargement des rendez-vous:', error);
@@ -107,15 +122,38 @@ const AppointmentsScreen: React.FC = () => {
   };
 
   const currentDate = new Date();
-  const upcomingAppointments = appointments.filter(apt => {
+  
+  // Séparer d'abord par upcoming/past, puis appliquer le filtre de statut
+  const allUpcomingAppointments = appointments.filter(apt => {
     const aptDate = new Date(apt.date);
     return aptDate >= currentDate && apt.status !== 'cancelled';
   });
   
-  const pastAppointments = appointments.filter(apt => {
+  const allPastAppointments = appointments.filter(apt => {
     const aptDate = new Date(apt.date);
     return aptDate < currentDate || apt.status === 'cancelled';
   });
+  
+  // Fonction pour filtrer les rendez-vous par statut
+  const filterAppointmentsByStatus = (appointments: Appointment[]) => {
+    if (statusFilter === 'all') {
+      return appointments;
+    }
+    return appointments.filter(apt => apt.status === statusFilter);
+  };
+  
+  const upcomingAppointments = filterAppointmentsByStatus(allUpcomingAppointments);
+  const pastAppointments = filterAppointmentsByStatus(allPastAppointments);
+
+  // Fonction pour obtenir le nombre de rendez-vous par statut
+  const getStatusCount = (status: string, isUpcoming: boolean = true) => {
+    const relevantAppointments = isUpcoming ? allUpcomingAppointments : allPastAppointments;
+    
+    if (status === 'all') {
+      return relevantAppointments.length;
+    }
+    return relevantAppointments.filter(apt => apt.status === status).length;
+  };
 
   return (
     <SafeAreaView style={[styles.container, isDarkMode && styles.containerDark]}>
@@ -145,22 +183,82 @@ const AppointmentsScreen: React.FC = () => {
               activeTab === 'upcoming' && styles.activeTabText
             ]}
           >
-            À venir
+            À venir ({getStatusCount(statusFilter, true)})
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'past' && styles.activeTab]}
+          style={[
+            styles.tab, 
+            isDarkMode && styles.tabDark,
+            activeTab === 'past' && styles.activeTab
+          ]}
           onPress={() => setActiveTab('past')}
         >
           <Text 
             style={[
-              styles.tabText, 
+              styles.tabText,
+              isDarkMode && styles.tabTextDark,
               activeTab === 'past' && styles.activeTabText
             ]}
           >
-            Passés
+            Passés ({getStatusCount(statusFilter, false)})
           </Text>
         </TouchableOpacity>
+      </View>
+
+      {/* Section des filtres par statut */}
+      <View style={[styles.filtersSection, isDarkMode && styles.filtersSectionDark]}>
+        <View style={styles.filtersHeader}>
+          <Ionicons 
+            name="filter-outline" 
+            size={18} 
+            color={isDarkMode ? "#60A5FA" : "#3498db"} 
+          />
+          <Text style={[styles.filtersTitle, isDarkMode && styles.filtersTitleDark]}>
+            Filtrer par statut
+          </Text>
+        </View>
+        <FlatList
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          data={statusOptions}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => {
+            const count = getStatusCount(item.id, activeTab === 'upcoming');
+            return (
+              <TouchableOpacity
+                style={[
+                  styles.statusFilterButton,
+                  isDarkMode && styles.statusFilterButtonDark,
+                  statusFilter === item.id && styles.statusFilterButtonActive,
+                  statusFilter === item.id && { borderColor: item.color }
+                ]}
+                onPress={() => setStatusFilter(item.id)}
+              >
+                <Ionicons 
+                  name={item.icon} 
+                  size={16} 
+                  color={statusFilter === item.id ? item.color : (isDarkMode ? '#9CA3AF' : '#666')} 
+                />
+                <Text 
+                  style={[
+                    styles.statusFilterText,
+                    isDarkMode && styles.statusFilterTextDark,
+                    statusFilter === item.id && { color: item.color, fontWeight: '600' }
+                  ]}
+                >
+                  {item.label}
+                </Text>
+                {count > 0 && (
+                  <View style={[styles.statusBadge, { backgroundColor: item.color }]}>
+                    <Text style={styles.statusBadgeText}>{count}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          }}
+          contentContainerStyle={styles.statusFiltersList}
+        />
       </View>
 
       <View style={styles.listContainer}>
@@ -169,7 +267,7 @@ const AppointmentsScreen: React.FC = () => {
             appointments={upcomingAppointments}
             isLoading={isLoading}
             onAppointmentPress={handleAppointmentPress}
-            onCancelAppointment={handleCancelAppointment}
+            onCancelAppointment={handleDeleteAppointment}
           />
         ) : (
           <AppointmentList
@@ -259,6 +357,79 @@ const styles = StyleSheet.create({
   },
   tabTextDark: {
     color: '#9CA3AF', // gray-400
+  },
+  // Styles pour les filtres de statut
+  filtersSection: {
+    backgroundColor: '#f8f9fa',
+    padding: 16,
+    marginBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e1e5e9',
+  },
+  filtersSectionDark: {
+    backgroundColor: '#1e293b',
+    borderBottomColor: '#374151',
+  },
+  filtersHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  filtersTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginLeft: 8,
+  },
+  filtersTitleDark: {
+    color: '#9CA3AF',
+  },
+  statusFiltersList: {
+    paddingHorizontal: 0,
+  },
+  statusFilterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+    minHeight: 36,
+  },
+  statusFilterButtonDark: {
+    backgroundColor: '#374151',
+    borderColor: '#4b5563',
+  },
+  statusFilterButtonActive: {
+    borderWidth: 2,
+    backgroundColor: '#f0f9ff',
+  },
+  statusFilterText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6b7280',
+    marginLeft: 6,
+    marginRight: 6,
+  },
+  statusFilterTextDark: {
+    color: '#9CA3AF',
+  },
+  statusBadge: {
+    backgroundColor: '#3498db',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
+  statusBadgeText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });
 

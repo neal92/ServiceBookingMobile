@@ -26,9 +26,22 @@ export interface Appointment {
   user: User;
   service: Service;
   date: string;  // ISO date string
+  time?: string; // Format HH:MM (optionnel pour compatibilité avec données existantes)
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
   notes?: string;
   createdAt: string;
+}
+
+// Type pour créer un nouveau rendez-vous (structure attendue par l'API)
+export interface CreateAppointmentRequest {
+  clientName: string;
+  clientEmail: string;
+  clientPhone?: string;
+  serviceId: string;
+  date: string;      // Format YYYY-MM-DD
+  time: string;      // Format HH:MM
+  notes?: string;
+  createdBy: string;
 }
 
 // Types pour les services

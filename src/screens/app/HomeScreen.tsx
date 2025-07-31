@@ -1,12 +1,12 @@
 import React, { useContext, useState, useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, FlatList, Image, Animated, Dimensions } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, FlatList, Image, Animated, Dimensions, Modal } from 'react-native';
 import { Card, Title, Paragraph, Button, IconButton } from 'react-native-paper';
 import { AuthContext } from '../../contexts/AuthContext';
 import { ThemeContext } from '../../contexts/ThemeContext';
-import { getUserAppointments } from '../../api/appointments';
+import { getUserAppointments, createAppointment, getAvailableTimeSlots, checkTimeSlotAvailability } from '../../api/appointments';
 import { getAllServices } from '../../api/services';
 import { getUserNotifications, deleteNotification } from '../../api/notifications';
-import { Appointment, Service, Notification } from '../../types/index';
+import { Appointment, Service, Notification, CreateAppointmentRequest } from '../../types/index';
 import { AppointmentList } from '../../components/appointments/AppointmentList';
 import { Ionicons } from '@expo/vector-icons';
 import { API_URL } from '../../config/api';
@@ -14,6 +14,20 @@ import { API_URL } from '../../config/api';
 const HomeScreen = ({ navigation }: any) => {
   const { user, token } = useContext(AuthContext);
   const { theme, toggleTheme, isDarkMode } = useContext(ThemeContext);
+  // Animation pour le changement de mode (dark/light)
+  const [modeAnimValue] = useState(new Animated.Value(isDarkMode ? 1 : 0));
+  const prevIsDarkMode = useRef(isDarkMode);
+
+  useEffect(() => {
+    if (prevIsDarkMode.current !== isDarkMode) {
+      Animated.timing(modeAnimValue, {
+        toValue: isDarkMode ? 1 : 0,
+        duration: 400,
+        useNativeDriver: false,
+      }).start();
+      prevIsDarkMode.current = isDarkMode;
+    }
+  }, [isDarkMode]);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState('09:00');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -21,6 +35,13 @@ const HomeScreen = ({ navigation }: any) => {
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  
+  // États pour la popup de réservation
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [bookingStep, setBookingStep] = useState<'service' | 'time'>('service'); // Étape courante
+  const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [availableSlots, setAvailableSlots] = useState<any[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
   
   // Animations pour le calendrier
   const calendarHeight = useRef(new Animated.Value(160)).current; // Augmenté à 160 pour bien afficher les jours et le bouton
@@ -93,7 +114,25 @@ const HomeScreen = ({ navigation }: any) => {
         setIsLoading(true);
         try {
           const data = await getUserAppointments(token);
-          setAppointments(data);
+          console.log('📅 Données rendez-vous reçues dans HomeScreen:', data.slice(0, 1)); // Debug
+          
+          // Adapter les données pour inclure le champ time s'il existe
+          const adaptedData = data.map((apt: any) => ({
+            ...apt,
+            // S'assurer que le champ time est préservé
+            time: apt.time || apt.appointmentTime || null,
+            service: apt.service || {
+              id: apt.serviceId?.toString() ?? '',
+              name: apt.serviceName ?? '',
+              price: Number(apt.price) ?? 0,
+              duration: apt.duration ?? 0,
+              description: '',
+              category: '',
+              imageUrl: '',
+            },
+          }));
+          
+          setAppointments(adaptedData);
         } catch (e) {
           setAppointments([]);
         } finally {
@@ -362,16 +401,27 @@ const HomeScreen = ({ navigation }: any) => {
 
   // Fonction pour formater le temps relatif
   const formatRelativeTime = (isoDate: string) => {
-    const now = new Date();
-    const date = new Date(isoDate);
-    const diffInMs = now.getTime() - date.getTime();
-    const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
-    const diffInDays = Math.floor(diffInHours / 24);
+    if (!isoDate) return 'récemment';
     
-    if (diffInHours < 1) return 'À l\'instant';
-    if (diffInHours < 24) return `${diffInHours}h`;
-    if (diffInDays < 7) return `${diffInDays}j`;
-    return `${Math.floor(diffInDays / 7)}sem`;
+    try {
+      const now = new Date();
+      const date = new Date(isoDate);
+      
+      // Vérifier si la date est valide
+      if (isNaN(date.getTime())) return 'récemment';
+      
+      const diffInMs = now.getTime() - date.getTime();
+      const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+      const diffInDays = Math.floor(diffInHours / 24);
+      
+      if (diffInHours < 1) return 'À l\'instant';
+      if (diffInHours < 24) return `${diffInHours}h`;
+      if (diffInDays < 7) return `${diffInDays}j`;
+      return `${Math.floor(diffInDays / 7)}sem`;
+    } catch (error) {
+      console.warn('Erreur lors du formatage de la date:', isoDate, error);
+      return 'récemment';
+    }
   };
 
   // Fonction pour obtenir l'icône selon le type de notification
@@ -384,15 +434,177 @@ const HomeScreen = ({ navigation }: any) => {
     }
   };
 
+  // Fonctions pour la gestion de la réservation rapide
+  
+  // Ouvrir la popup de réservation pour une date sélectionnée
+  const openBookingModal = () => {
+    setBookingStep('service');
+    setSelectedService(null);
+    setShowBookingModal(true);
+  };
+
+  // Sélectionner un service et passer à l'étape suivante
+  const selectService = async (service: Service) => {
+    setSelectedService(service);
+    setBookingStep('time');
+    setLoadingSlots(true);
+    
+    try {
+      // Générer les créneaux par défaut adaptés à la durée du service
+      const defaultSlots = generateDefaultTimeSlotsForService(service);
+      
+      // Vérifier la disponibilité de chaque créneau individuellement
+      const dateString = selectedDate.toISOString().split('T')[0];
+      const slotsWithAvailability = await Promise.all(
+        defaultSlots.map(async (slot) => {
+          try {
+            const availability = await checkTimeSlotAvailability(dateString, slot.time);
+            return {
+              ...slot,
+              available: availability?.available !== false // Si l'API ne répond pas, considérer comme disponible
+            };
+          } catch (error) {
+            console.log(`Erreur pour le créneau ${slot.time}, considéré comme disponible`);
+            return {
+              ...slot,
+              available: true // En cas d'erreur, considérer comme disponible
+            };
+          }
+        })
+      );
+      
+      setAvailableSlots(slotsWithAvailability);
+    } catch (error) {
+      console.error('Erreur lors du chargement des créneaux:', error);
+      // Utiliser les créneaux par défaut avec disponibilité par défaut
+      setAvailableSlots(generateDefaultTimeSlotsForService(service));
+    } finally {
+      setLoadingSlots(false);
+    }
+  };
+
+  // Générer des créneaux par défaut selon la durée d'un service spécifique
+  const generateDefaultTimeSlotsForService = (service: Service) => {
+    const serviceDuration = service.duration;
+    let timeSlots: string[] = [];
+
+    if (serviceDuration >= 60) {
+      // Service de 60 min ou plus : créneaux d'1 heure
+      timeSlots = [
+        '08:00', '09:00', '10:00', '11:00',
+        '14:00', '15:00', '16:00', '17:00'
+      ];
+    } else if (serviceDuration <= 30) {
+      // Service de 30 min ou moins : créneaux de 30 min
+      timeSlots = [
+        '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+        '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
+      ];
+    } else {
+      // Service entre 30 et 60 min : créneaux de 45 min
+      timeSlots = [
+        '08:15', '09:00', '09:45', '10:30', '11:15',
+        '14:00', '14:45', '15:30', '16:15', '17:00'
+      ];
+    }
+    
+    return timeSlots.map(time => ({ 
+      time, 
+      available: true, 
+      period: parseInt(time.split(':')[0]) < 12 ? 'morning' : 'afternoon' 
+    }));
+  };
+
+  // Générer des créneaux par défaut (cas général)
+  const generateDefaultTimeSlots = () => {
+    // Créneaux par défaut de 30 min si aucun service sélectionné
+    const timeSlots = [
+      '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+      '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
+    ];
+    
+    return timeSlots.map(time => ({ 
+      time, 
+      available: true, 
+      period: parseInt(time.split(':')[0]) < 12 ? 'morning' : 'afternoon' 
+    }));
+  };
+
+  // Confirmer la réservation
+  const confirmBooking = async (timeSlot: string) => {
+    if (!selectedService || !user || !token) {
+      console.error('❌ Données manquantes:', { selectedService: !!selectedService, user: !!user, token: !!token });
+      return;
+    }
+    
+    // Vérifications supplémentaires
+    if (!user.firstName || !user.email || !selectedService.id) {
+      console.error('❌ Champs utilisateur ou service manquants:', {
+        firstName: user.firstName,
+        email: user.email,
+        serviceId: selectedService.id
+      });
+      return;
+    }
+    
+    try {
+      // Format de données selon l'API: CreateAppointmentRequest
+      const appointmentData: CreateAppointmentRequest = {
+        clientName: `${user.firstName} ${user.lastName || ''}`.trim(), // Nom complet du client
+        clientEmail: user.email, // Email du client
+        serviceId: selectedService.id, // ID du service
+        date: selectedDate.toISOString().split('T')[0], // Date au format YYYY-MM-DD
+        time: timeSlot, // Heure au format HH:MM
+        clientPhone: (user as any).phone || '', // Téléphone du client (optionnel)
+        notes: '', // Notes optionnelles
+        createdBy: String(user.id || user.email) // ID ou email de l'utilisateur qui crée
+      };
+      
+      console.log('📅 Données du rendez-vous à envoyer:', appointmentData); // Debug
+      console.log('📋 Service sélectionné:', selectedService); // Debug
+      console.log('👤 Utilisateur:', user); // Debug
+      
+      await createAppointment(appointmentData, token);
+      
+      // Fermer la popup et rafraîchir les données
+      setShowBookingModal(false);
+      setSelectedService(null);
+      
+      // Rafraîchir les rendez-vous
+      const updatedAppointments = await getUserAppointments(token);
+      setAppointments(updatedAppointments);
+      
+      console.log('✅ Rendez-vous créé avec succès');
+    } catch (error) {
+      console.error('❌ Erreur lors de la création du rendez-vous:', error);
+    }
+  };
+
+  // Fermer la popup
+  const closeBookingModal = () => {
+    setShowBookingModal(false);
+    setSelectedService(null);
+    setBookingStep('service');
+  };
+
   return (
-    <ScrollView 
-      style={[styles.container, isDarkMode && styles.containerDark]}
-      contentContainerStyle={styles.scrollContent}
+    <Animated.View
+      style={{
+        flex: 1,
+        backgroundColor: modeAnimValue.interpolate({
+          inputRange: [0, 1],
+          outputRange: ['#f8f9fa', '#111827']
+        })
+      }}
     >
+      <ScrollView 
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.scrollContent}
+      >
       <View style={[styles.header, isDarkMode && styles.headerDark]}>
         <View style={styles.titleSection}>
           <Text style={[styles.appName, isDarkMode && styles.appNameDark]}>
-            Bienvenue chez <Text style={[styles.appName, isDarkMode && styles.appNameDark]}>ServiceBooking</Text> {user ? user.firstName : ''}!
+            Bienvenue chez <Text style={[styles.appName, isDarkMode && styles.appNameDark]}>ServiceBooking</Text> {user ? (user.firstName || '') : ''}!
           </Text>
           <Text style={[styles.headerSubtitle, isDarkMode && styles.headerSubtitleDark]}>Gérer facilement vos rendez-vous de chez votre prestataire ❤️</Text>
         </View>
@@ -441,7 +653,7 @@ const HomeScreen = ({ navigation }: any) => {
             </View>
             <View style={styles.calendarControls}>
               <TouchableOpacity 
-                style={[styles.viewModeButton, isDarkMode && styles.buttonDark]} 
+                style={[styles.viewModeButton, isDarkMode && styles.viewModeButtonDark]} 
                 onPress={() => {
                   // Animation du bouton avant le changement
                   Animated.sequence([
@@ -465,11 +677,11 @@ const HomeScreen = ({ navigation }: any) => {
                   <Ionicons 
                     name={viewMode === 'week' ? 'calendar-outline' : 'calendar'} 
                     size={20} 
-                    color={isDarkMode ? "#60A5FA" : "#4F8EF7"} 
+                    color={isDarkMode ? "#FFFFFF" : "#4F8EF7"} 
                   />
                   <Text style={{
                     marginLeft: 4,
-                    color: isDarkMode ? "#60A5FA" : "#4F8EF7",
+                    color: isDarkMode ? "#FFFFFF" : "#4F8EF7",
                     fontSize: 12,
                     fontWeight: '600',
                   }}>
@@ -603,6 +815,7 @@ const HomeScreen = ({ navigation }: any) => {
                   {/* Jours du mois organisés en grille */}
                   <Animated.View style={[
                     styles.monthGrid,
+                    isDarkMode && styles.monthGridDark,
                     {
                       transform: [{ scale: monthGridScale }],
                       opacity: monthGridScale
@@ -635,6 +848,7 @@ const HomeScreen = ({ navigation }: any) => {
                                 key={dayItem.toDateString()}
                                 style={[
                                   styles.monthViewDayButton,
+                                  isDarkMode && styles.monthViewDayButtonDark,
                                   isToday(dayItem) && styles.monthViewTodayButton,
                                   dayItem.toDateString() === selectedDate.toDateString() && styles.monthViewDayButtonSelected
                                 ]}
@@ -704,13 +918,7 @@ const HomeScreen = ({ navigation }: any) => {
                       isDarkMode && styles.buttonDark
                     ]}
                     labelStyle={[isDarkMode && styles.buttonTextDark, { fontSize: 11 }]} // Taille de texte encore plus petite
-                    onPress={() => navigation.navigate('ServicesTab', {
-                      screen: 'Services',
-                      params: { 
-                        selectedDate: selectedDate.toISOString(),
-                        preSelectedDate: true 
-                      }
-                    })}
+                    onPress={openBookingModal}
                   >
                     Prendre un rendez-vous
                   </Button>
@@ -772,10 +980,10 @@ const HomeScreen = ({ navigation }: any) => {
                   <Text style={[styles.activityMessage, isDarkMode && styles.activityMessageDark]}>{activity.message}</Text>
                   {activity.serviceData && (
                     <Text style={[styles.activityServicePrice, isDarkMode && styles.activityServicePriceDark]}>
-                      {activity.serviceData.price}€ • {activity.serviceData.duration} min
+                      {activity.serviceData.price || 0}€ • {activity.serviceData.duration || 0} min
                     </Text>
                   )}
-                  <Text style={[styles.activityTime, isDarkMode && styles.activityTimeDark]}>Il y a {activity.time}</Text>
+                  <Text style={[styles.activityTime, isDarkMode && styles.activityTimeDark]}>Il y a {activity.time || 'récemment'}</Text>
                 </View>
               </View>
             ))}
@@ -797,8 +1005,8 @@ const HomeScreen = ({ navigation }: any) => {
                 <View key={notification.id} style={[styles.notificationItem, isDarkMode && styles.notificationItemDark]}>
                   <Text style={styles.notificationIcon}>{getNotificationIcon(notification.type)}</Text>
                   <View style={styles.notificationContent}>
-                    <Text style={[styles.notificationMessage, isDarkMode && styles.notificationMessageDark]}>{notification.message}</Text>
-                    <Text style={[styles.notificationTime, isDarkMode && styles.notificationTimeDark]}>Il y a {formatRelativeTime(notification.createdAt)}</Text>
+                    <Text style={[styles.notificationMessage, isDarkMode && styles.notificationMessageDark]}>{notification.message || 'Notification'}</Text>
+                    <Text style={[styles.notificationTime, isDarkMode && styles.notificationTimeDark]}>Il y a {formatRelativeTime(notification.createdAt) || 'récemment'}</Text>
                   </View>
                   <TouchableOpacity 
                     onPress={() => removeNotification(notification.id)}
@@ -814,10 +1022,199 @@ const HomeScreen = ({ navigation }: any) => {
       )}
             
     </ScrollView>
+    
+    {/* Popup de réservation rapide */}
+    <Modal
+      visible={showBookingModal}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={closeBookingModal}
+    >
+      <View style={[styles.modalOverlay, isDarkMode && styles.modalOverlayDark]}>
+        <View style={[styles.modalContent, isDarkMode && styles.modalContentDark]}>
+          
+          {/* En-tête du modal */}
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, isDarkMode && styles.modalTitleDark]}>
+              {bookingStep === 'service' ? 'Choisir un service' : `Choisir un créneau`}
+            </Text>
+            <TouchableOpacity onPress={closeBookingModal} style={styles.closeButton}>
+              <Ionicons name="close" size={24} color={isDarkMode ? "#fff" : "#333"} />
+            </TouchableOpacity>
+          </View>
+          
+          {/* Date sélectionnée */}
+          <View style={[styles.selectedDateBanner, isDarkMode && styles.selectedDateBannerDark]}>
+            <Ionicons name="calendar" size={20} color="#4F8EF7" />
+            <Text style={[styles.selectedDateText, isDarkMode && styles.selectedDateTextDark]}>
+              {selectedDate.toLocaleDateString('fr-FR', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}
+            </Text>
+          </View>
+
+          {bookingStep === 'service' ? (
+            /* Étape 1 : Sélection du service */
+            <ScrollView style={styles.modalScrollContent} showsVerticalScrollIndicator={false}>
+              {services.map((service) => (
+                <TouchableOpacity
+                  key={service.id}
+                  style={[styles.serviceOptionCard, isDarkMode && styles.serviceOptionCardDark]}
+                  onPress={() => selectService(service)}
+                >
+                  {getServiceImageUrl(service) ? (
+                    <Image 
+                      source={{ uri: getServiceImageUrl(service)! }} 
+                      style={styles.serviceOptionImage}
+                    />
+                  ) : (
+                    <View style={[styles.serviceOptionImage, styles.serviceOptionImagePlaceholder]}>
+                      <Text style={{ fontSize: 20 }}>📷</Text>
+                    </View>
+                  )}
+                  <View style={styles.serviceOptionContent}>
+                    <Text style={[styles.serviceOptionName, isDarkMode && styles.serviceOptionNameDark]}>
+                      {service.name || 'Service'}
+                    </Text>
+                    <Text style={[styles.serviceOptionDescription, isDarkMode && styles.serviceOptionDescriptionDark]} numberOfLines={2}>
+                      {service.description || 'Description du service'}
+                    </Text>
+                    <View style={styles.serviceOptionFooter}>
+                      <Text style={[styles.serviceOptionPrice, isDarkMode && styles.serviceOptionPriceDark]}>
+                        {service.price || 0}€
+                      </Text>
+                      <Text style={[styles.serviceOptionDuration, isDarkMode && styles.serviceOptionDurationDark]}>
+                        {service.duration || 0} min
+                      </Text>
+                    </View>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={isDarkMode ? "#9CA3AF" : "#666"} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          ) : (
+            /* Étape 2 : Sélection du créneau */
+            <View>
+              {/* Service sélectionné */}
+              {selectedService && (
+                <View style={[styles.selectedServiceBanner, isDarkMode && styles.selectedServiceBannerDark]}>
+                  <TouchableOpacity 
+                    onPress={() => setBookingStep('service')}
+                    style={styles.backButton}
+                  >
+                    <Ionicons name="chevron-back" size={20} color="#4F8EF7" />
+                  </TouchableOpacity>
+                  <View style={styles.selectedServiceContent}>
+                    <Text style={[styles.selectedServiceName, isDarkMode && styles.selectedServiceNameDark]}>
+                      {selectedService.name || 'Service sélectionné'}
+                    </Text>
+                    <Text style={[styles.selectedServicePrice, isDarkMode && styles.selectedServicePriceDark]}>
+                      {selectedService.price || 0}€ • {selectedService.duration || 0} min
+                    </Text>
+                  </View>
+                </View>
+              )}
+              
+              {/* Note explicative sur les créneaux */}
+              {selectedService && (
+                <View style={[styles.timeSlotInfo, isDarkMode && styles.timeSlotInfoDark]}>
+                  <Ionicons name="information-circle" size={16} color={isDarkMode ? "#60A5FA" : "#4F8EF7"} />
+                  <Text style={[styles.timeSlotInfoText, isDarkMode && styles.timeSlotInfoTextDark]}>
+                    {(selectedService.duration || 30) >= 60 
+                      ? "Créneaux d'1 heure adaptés à ce service"
+                      : (selectedService.duration || 30) <= 30 
+                        ? "Créneaux de 30 min adaptés à ce service"
+                        : "Créneaux de 45 min adaptés à ce service"
+                    }
+                  </Text>
+                </View>
+              )}
+              
+              {/* Créneaux horaires */}
+              <ScrollView style={styles.modalScrollContent} showsVerticalScrollIndicator={false}>
+                {loadingSlots ? (
+                  <View style={styles.loadingContainer}>
+                    <Text style={[styles.loadingText, isDarkMode && styles.loadingTextDark]}>
+                      Chargement des créneaux...
+                    </Text>
+                  </View>
+                ) : (
+                  <View>
+                    {/* Créneaux du matin */}
+                    <Text style={[styles.periodTitle, isDarkMode && styles.periodTitleDark]}>🌅 Matin</Text>
+                    <View style={styles.timeButtonsContainer}>
+                      {availableSlots
+                        .filter(slot => slot.period === 'morning')
+                        .map((slot) => (
+                          <TouchableOpacity
+                            key={slot.time}
+                            style={[
+                              styles.timeButton,
+                              isDarkMode && styles.timeButtonDark,
+                              !slot.available && styles.timeButtonDisabled
+                            ]}
+                            onPress={() => confirmBooking(slot.time)}
+                            disabled={!slot.available}
+                          >
+                            <Text style={[
+                              styles.timeButtonText,
+                              isDarkMode && styles.timeButtonTextDark,
+                              !slot.available && styles.timeButtonTextDisabled
+                            ]}>
+                              {slot.time}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                    </View>
+                    
+                    {/* Créneaux de l'après-midi */}
+                    <Text style={[styles.periodTitle, isDarkMode && styles.periodTitleDark]}>🌇 Après-midi</Text>
+                    <View style={styles.timeButtonsContainer}>
+                      {availableSlots
+                        .filter(slot => slot.period === 'afternoon')
+                        .map((slot) => (
+                          <TouchableOpacity
+                            key={slot.time}
+                            style={[
+                              styles.timeButton,
+                              isDarkMode && styles.timeButtonDark,
+                              !slot.available && styles.timeButtonDisabled
+                            ]}
+                            onPress={() => confirmBooking(slot.time)}
+                            disabled={!slot.available}
+                          >
+                            <Text style={[
+                              styles.timeButtonText,
+                              isDarkMode && styles.timeButtonTextDark,
+                              !slot.available && styles.timeButtonTextDisabled
+                            ]}>
+                              {slot.time}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                    </View>
+                  </View>
+                )}
+              </ScrollView>
+            </View>
+          )}
+        </View>
+      </View>
+    </Modal>
+    </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
+  monthGridDark: {
+    backgroundColor: '#1F2937',
+  },
+  monthViewDayButtonDark: {
+    backgroundColor: '#111827',
+  },
   container: {
     flex: 1,
     backgroundColor: '#f8f9fa',
@@ -972,6 +1369,10 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     borderWidth: 1,
     borderColor: '#e0e9f7',
+  },
+  viewModeButtonDark: {
+    backgroundColor: '#374151', // gray-700
+    borderColor: '#4B5563', // gray-600
   },
   weekNavigation: {
     flexDirection: 'row',
@@ -1506,6 +1907,263 @@ const styles = StyleSheet.create({
   },
   appointmentDotOther: {
     backgroundColor: '#6B7280', // gray-500
+  },
+  // Styles pour la popup de réservation
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalOverlayDark: {
+    backgroundColor: 'rgba(0,0,0,0.8)',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    margin: 20,
+    maxHeight: '85%', // Augmenté de 80% à 85%
+    width: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  modalContentDark: {
+    backgroundColor: '#1F2937',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    flex: 1,
+  },
+  modalTitleDark: {
+    color: '#fff',
+  },
+  closeButton: {
+    padding: 5,
+  },
+  selectedDateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F4FD',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 20,
+  },
+  selectedDateBannerDark: {
+    backgroundColor: '#1E3A5F',
+  },
+  selectedDateText: {
+    marginLeft: 10,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  selectedDateTextDark: {
+    color: '#fff',
+  },
+  modalScrollContent: {
+    maxHeight: 500, // Augmenté de 400 à 500 pour plus d'espace
+    flexGrow: 1, // Permet au contenu de grandir
+  },
+  serviceOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  serviceOptionCardDark: {
+    backgroundColor: '#374151',
+    borderColor: '#4B5563',
+  },
+  serviceOptionImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 15,
+  },
+  serviceOptionImagePlaceholder: {
+    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  serviceOptionContent: {
+    flex: 1,
+  },
+  serviceOptionName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  serviceOptionNameDark: {
+    color: '#fff',
+  },
+  serviceOptionDescription: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+  },
+  serviceOptionDescriptionDark: {
+    color: '#9CA3AF',
+  },
+  serviceOptionFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  serviceOptionPrice: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#4F8EF7',
+  },
+  serviceOptionPriceDark: {
+    color: '#60A5FA',
+  },
+  serviceOptionDuration: {
+    fontSize: 14,
+    color: '#666',
+  },
+  serviceOptionDurationDark: {
+    color: '#9CA3AF',
+  },
+  selectedServiceBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  selectedServiceBannerDark: {
+    backgroundColor: '#374151',
+    borderColor: '#4B5563',
+  },
+  backButton: {
+    marginRight: 10,
+    padding: 5,
+  },
+  selectedServiceContent: {
+    flex: 1,
+  },
+  selectedServiceName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  selectedServiceNameDark: {
+    color: '#fff',
+  },
+  selectedServicePrice: {
+    fontSize: 14,
+    color: '#4F8EF7',
+    fontWeight: '600',
+  },
+  selectedServicePriceDark: {
+    color: '#60A5FA',
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+  },
+  loadingTextDark: {
+    color: '#9CA3AF',
+  },
+  periodTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 12, // Réduit de 15 à 12
+    marginTop: 8, // Réduit de 10 à 8
+  },
+  periodTitleDark: {
+    color: '#fff',
+  },
+  timeButtonsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    marginBottom: 15, // Réduit de 20 à 15
+    marginHorizontal: -4, // Compense les marges des boutons
+  },
+  timeButton: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 10,
+    paddingVertical: 10, // Réduit de 12 à 10
+    paddingHorizontal: 12,
+    marginBottom: 6, // Réduit de 8 à 6
+    marginHorizontal: 4, // Espacement horizontal entre les boutons
+    minWidth: 75, // Largeur fixe minimum plus petite
+    maxWidth: 85, // Largeur maximale pour éviter les débordements
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    flex: 0, // Empêche l'expansion automatique
+  },
+  timeButtonDark: {
+    backgroundColor: '#374151',
+    borderColor: '#4B5563',
+  },
+  timeButtonDisabled: {
+    opacity: 0.5,
+  },
+  timeButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  timeButtonTextDark: {
+    color: '#fff',
+  },
+  timeButtonTextDisabled: {
+    color: '#999',
+  },
+  // Styles pour l'info sur les créneaux
+  timeSlotInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderLeftWidth: 3,
+    borderLeftColor: '#4F8EF7',
+  },
+  timeSlotInfoDark: {
+    backgroundColor: '#374151',
+    borderLeftColor: '#60A5FA',
+  },
+  timeSlotInfoText: {
+    marginLeft: 8,
+    fontSize: 13,
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  timeSlotInfoTextDark: {
+    color: '#9CA3AF',
   },
 });
 

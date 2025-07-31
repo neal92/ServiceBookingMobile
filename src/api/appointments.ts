@@ -1,5 +1,5 @@
 import apiClient from '../utils/api';
-import { Appointment } from '../types/index';
+import { Appointment, CreateAppointmentRequest } from '../types/index';
 
 /**
  * Récupérer tous les rendez-vous d'un utilisateur
@@ -24,15 +24,18 @@ export const getUserAppointments = async (token: string) => {
  * @param token - Token d'authentification
  * @returns Rendez-vous créé
  */
-export const createAppointment = async (appointmentData: Partial<Appointment>, token: string) => {
+export const createAppointment = async (appointmentData: CreateAppointmentRequest, token: string) => {
   try {
+    console.log('📋 Données envoyées à l\'API:', appointmentData);
     const response = await apiClient.post(
       `/appointments`, 
       appointmentData, 
       { headers: { Authorization: `Bearer ${token}` }}
     );
+    console.log('✅ Réponse de l\'API:', response.data);
     return response.data;
   } catch (error) {
+    console.error('❌ Erreur lors de la création du rendez-vous:', error);
     throw error;
   }
 };

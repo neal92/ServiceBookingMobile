@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useContext } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, FlatList, TouchableOpacity, Image, TextInput, Alert, Modal, ScrollView } from 'react-native';
+import React, { useState, useEffect, useContext, useRef } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, FlatList, TouchableOpacity, Image, TextInput, Alert, Modal, ScrollView, Animated } from 'react-native';
 import { Card, Title, Paragraph, Button } from 'react-native-paper';
 import { useAuth } from '../../hooks/useAuth';
 import { ThemeContext } from '../../contexts/ThemeContext';
-import { Service } from '../../types/index';
-import { Appointment } from '../../types/index';
+import { Service, Appointment, CreateAppointmentRequest } from '../../types/index';
 import { getAllServices, getAllCategories } from '../../api/services';
 import { createAppointment, getAvailableTimeSlots, checkTimeSlotAvailability, getUserAppointments } from '../../api/appointments';
 import { Loading } from '../../components/common/Loading';
@@ -14,9 +13,89 @@ import { testAndShowAPIConnection } from '../../utils/networkUtils';
 import { API_URL } from '../../config/api';
 
 const ServicesScreen: React.FC = () => {
+  // --- Hooks et fonctions calendrier HomeScreen ---
+  const weekDays = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+  const [currentMonth, setCurrentMonth] = React.useState(new Date());
+
+  function getMonthYearLabel(date: Date) {
+    return date.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  }
+
+  function isSameDay(a: Date, b: Date) {
+    return (
+      a && b &&
+      a.getDate() === b.getDate() &&
+      a.getMonth() === b.getMonth() &&
+      a.getFullYear() === b.getFullYear()
+    );
+  }
+
+  // Removed duplicate isToday function to fix duplicate identifier error
+
+  function isPastDay(date: Date) {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    return date < today;
+  }
+
+  function goToPreviousMonth() {
+    setCurrentMonth(prev => {
+      const d = new Date(prev);
+      d.setMonth(d.getMonth() - 1);
+      return d;
+    });
+  }
+
+  function goToNextMonth() {
+    setCurrentMonth(prev => {
+      const d = new Date(prev);
+      d.setMonth(d.getMonth() + 1);
+      return d;
+    });
+  }
+
+  function getMonthGrid(monthDate: Date) {
+    const year = monthDate.getFullYear();
+    const month = monthDate.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    let firstDayOfWeek = firstDay.getDay();
+    firstDayOfWeek = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1;
+    const emptyStartDays = Array.from({ length: firstDayOfWeek }, () => null);
+    const monthDays = [];
+    for (let i = 1; i <= daysInMonth; i++) {
+      monthDays.push(new Date(year, month, i));
+    }
+    const totalDaysAdded = firstDayOfWeek + daysInMonth;
+    const remainingDays = totalDaysAdded % 7;
+    const emptyEndDays = remainingDays > 0 ? Array.from({ length: 7 - remainingDays }, () => null) : [];
+    const allDays = [...emptyStartDays, ...monthDays, ...emptyEndDays];
+    const weeks = [];
+    for (let i = 0; i < allDays.length; i += 7) {
+      weeks.push(allDays.slice(i, i + 7));
+    }
+    return weeks;
+  }
+
+  const monthGrid = getMonthGrid(currentMonth);
   const navigation = useNavigation();
   const { token, user } = useAuth();
   const { isDarkMode } = useContext(ThemeContext);
+  // Animation pour le changement de mode (dark/light)
+  const [modeAnimValue] = useState(new Animated.Value(isDarkMode ? 1 : 0));
+  const prevIsDarkMode = useRef(isDarkMode);
+
+  useEffect(() => {
+    if (prevIsDarkMode.current !== isDarkMode) {
+      Animated.timing(modeAnimValue, {
+        toValue: isDarkMode ? 1 : 0,
+        duration: 400,
+        useNativeDriver: false,
+      }).start();
+      prevIsDarkMode.current = isDarkMode;
+    }
+  }, [isDarkMode]);
   const [services, setServices] = useState<Service[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -35,6 +114,11 @@ const ServicesScreen: React.FC = () => {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [clientNotes, setClientNotes] = useState('');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+
+  // Animation pour la section horaire
+  const timeSectionOpacity = useRef(new Animated.Value(0)).current;
+  const timeSectionScale = useRef(new Animated.Value(0.9)).current;
+  const selectedTimeAnimation = useRef(new Animated.Value(1)).current;
 
   // Fonction pour charger les rendez-vous
   const loadAppointments = async () => {
@@ -123,80 +207,59 @@ const ServicesScreen: React.FC = () => {
 
   // Fonction pour charger les créneaux disponibles
   const loadAvailableSlots = async (date: Date) => {
-    if (!selectedService) return;
+    console.log('🔄 loadAvailableSlots appelée');
+    console.log('📅 Date:', date);
+    console.log('🔧 selectedService:', selectedService);
     
-    setLoadingSlots(true);
-    try {
-      const dateString = date.toISOString().split('T')[0]; // Format YYYY-MM-DD
-      
-      // Générer les créneaux par défaut basés sur la durée du service
-      const defaultSlots = getDefaultTimeSlots();
-      
-      // Vérifier la disponibilité de chaque créneau avec la nouvelle API
-      const slotsWithAvailability = await Promise.all(
-        defaultSlots.map(async (slot) => {
-          try {
-            const availabilityCheck = await checkTimeSlotAvailability(dateString, slot.time);
-            
-            // Logique de disponibilité améliorée
-            let isAvailable = true; // Par défaut disponible
-            
-            if (availabilityCheck && typeof availabilityCheck.available === 'boolean') {
-              isAvailable = availabilityCheck.available;
-            } else if (availabilityCheck && availabilityCheck.available === 'false') {
-              isAvailable = false;
-            }
-            
-            return {
-              ...slot,
-              available: isAvailable
-            };
-          } catch (error) {
-            // En cas d'erreur, considérer le créneau comme disponible
-            return {
-              ...slot,
-              available: true
-            };
-          }
-        })
-      );
-      
-      setAvailableSlots(slotsWithAvailability);
-    } catch (error: any) {
-      console.log('Erreur lors du chargement des créneaux, utilisation des créneaux par défaut:', error.message);
-      // En cas d'erreur générale, utiliser les créneaux par défaut (tous disponibles)
-      setAvailableSlots(getDefaultTimeSlots());
-    } finally {
-      setLoadingSlots(false);
+    if (!selectedService) {
+      console.log('❌ Pas de service sélectionné, arrêt');
+      return;
     }
-  };
 
-  // Créneaux par défaut si l'API ne répond pas
-  const getDefaultTimeSlots = () => {
-    if (!selectedService) return [];
+    // Pour les services de moins d'1h : créneaux de 30min
+    const timeSlots = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30'];
+    console.log('⏰ Service courte durée (<60min) - créneaux de 30min:', timeSlots);
     
-    const duration = selectedService.duration;
-    let timeSlots: string[] = [];
-    
-    if (duration >= 60) {
-      // Pour les services d'1h ou plus : créneaux d'1h (9h, 10h, 11h, 14h, 15h, 16h)
-      timeSlots = ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00'];
-    } else {
-      // Pour les services de moins d'1h : créneaux de 30min
-      timeSlots = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30'];
-    }
-    
-    return timeSlots.map(time => ({ 
+    const formattedSlots = timeSlots.map(time => ({ 
       time, 
       available: true, 
       period: parseInt(time.split(':')[0]) < 12 ? 'morning' : 'afternoon' 
     }));
+    
+    console.log('✅ Créneaux générés:', formattedSlots);
+    return formattedSlots;
   };
 
   // Effet pour charger les créneaux quand la date ou le service change
   useEffect(() => {
+    console.log('🔄 useEffect créneaux déclenché');
+    console.log('🔧 selectedService:', selectedService?.name);
+    console.log('📅 selectedDate:', selectedDate);
+    console.log('🎭 showBookingModal:', showBookingModal);
+    
     if (selectedService && showBookingModal) {
+      console.log('✅ Conditions remplies - Chargement des créneaux...');
       loadAvailableSlots(selectedDate);
+      
+      // Animation d'entrée pour la section horaire
+      Animated.parallel([
+        Animated.timing(timeSectionOpacity, {
+          toValue: 1,
+          duration: 500,
+          useNativeDriver: true,
+        }),
+        Animated.spring(timeSectionScale, {
+          toValue: 1,
+          tension: 100,
+          friction: 8,
+          useNativeDriver: true,
+        })
+      ]).start();
+    } else {
+      console.log('❌ Conditions non remplies pour charger les créneaux');
+      // Réinitialiser l'animation
+      timeSectionOpacity.setValue(0);
+      timeSectionScale.setValue(0.9);
     }
   }, [selectedDate, selectedService, showBookingModal]);
 
@@ -260,9 +323,15 @@ const ServicesScreen: React.FC = () => {
 
   // Fonction pour gérer la sélection de date dans le calendrier
   const handleDateSelect = (date: Date) => {
+    console.log('📅 Date sélectionnée:', date);
+    console.log('🔧 Service actuel:', selectedService);
+    
     setSelectedDate(date);
     setShowCalendarModal(false); // Fermer le calendrier
     setShowBookingModal(true); // Ouvrir le modal de sélection d'heure
+    
+    // Le useEffect va se charger automatiquement de charger les créneaux
+    // car selectedDate va changer et showBookingModal sera true
   };
 
   // Fonction pour générer les jours du mois pour le calendrier
@@ -318,70 +387,89 @@ const ServicesScreen: React.FC = () => {
       return;
     }
 
-    try {
-      setIsLoading(true);
-      
-      // Préparer les données selon le format attendu par l'API
-      const appointmentData = {
-        clientName: `${user.firstName} ${user.lastName || ''}`.trim() || 'Client',
-        email: user.email,
-        serviceId: selectedService.id, // Garder comme string
-        date: selectedDate.toISOString().split('T')[0], // Format YYYY-MM-DD
-        time: selectedTime, // Format HH:MM
-        ...(clientNotes.trim() && { notes: clientNotes.trim() }), // Ajouter notes seulement si non vide
-      };
+    // Pop-up de validation AVANT la réservation
+    Alert.alert(
+      'Confirmer la réservation',
+      `Voulez-vous vraiment réserver le service "${selectedService.name || 'le service sélectionné'}" le ${selectedDate.toLocaleDateString('fr-FR')} à ${selectedTime} ?`,
+      [
+        {
+          text: 'Annuler',
+          style: 'cancel',
+          onPress: () => {},
+        },
+        {
+          text: 'Confirmer',
+          style: 'default',
+          onPress: async () => {
+            try {
+              setIsLoading(true);
+              // Préparer les données selon le format attendu par l'API
+              const appointmentData: CreateAppointmentRequest = {
+                clientName: `${user.firstName} ${user.lastName || ''}`.trim() || 'Client',
+                clientEmail: user.email, // Correct: clientEmail au lieu de email
+                clientPhone: (user as any).phone || '', // Téléphone optionnel
+                serviceId: selectedService.id, // Garder comme string
+                date: selectedDate.toISOString().split('T')[0], // Format YYYY-MM-DD
+                time: selectedTime, // Format HH:MM
+                notes: clientNotes.trim() || '', // Notes optionnelles
+                createdBy: String(user.id || user.email) // ID ou email de l'utilisateur qui crée
+              };
 
-      // Vérification que tous les champs requis sont présents
-      if (!appointmentData.clientName || !appointmentData.email || !appointmentData.serviceId || !appointmentData.date || !appointmentData.time) {
-        console.error('Champs manquants:', {
-          clientName: !!appointmentData.clientName,
-          email: !!appointmentData.email,
-          serviceId: !!appointmentData.serviceId,
-          date: !!appointmentData.date,
-          time: !!appointmentData.time
-        });
-        Alert.alert('Erreur', 'Tous les champs requis ne sont pas remplis');
-        return;
-      }
+              // Vérification que tous les champs requis sont présents
+              if (!appointmentData.clientName || !appointmentData.clientEmail || !appointmentData.serviceId || !appointmentData.date || !appointmentData.time) {
+                console.error('Champs manquants:', {
+                  clientName: !!appointmentData.clientName,
+                  clientEmail: !!appointmentData.clientEmail,
+                  serviceId: !!appointmentData.serviceId,
+                  date: !!appointmentData.date,
+                  time: !!appointmentData.time
+                });
+                Alert.alert('Erreur', 'Tous les champs requis ne sont pas remplis');
+                return;
+              }
 
-      console.log('Création du rendez-vous:', appointmentData);
-      console.log('Type de serviceId:', typeof appointmentData.serviceId);
-      console.log('Valeurs individuelles:', {
-        clientName: appointmentData.clientName,
-        email: appointmentData.email, 
-        serviceId: appointmentData.serviceId,
-        date: appointmentData.date,
-        time: appointmentData.time
-      });
-      const newAppointment = await createAppointment(appointmentData, token);
-      
-      Alert.alert(
-        'Réservation confirmée !',
-        `Votre rendez-vous pour "${selectedService.name}" a été réservé pour le ${selectedDate.toLocaleDateString('fr-FR')} à ${selectedTime}`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              setShowBookingModal(false);
-              setSelectedService(null);
-              setClientNotes(''); // Réinitialiser les notes
-              loadAppointments(); // Recharger les rendez-vous pour mettre à jour le calendrier
-              // Optionnel: naviguer vers l'écran des rendez-vous
-              // navigation.navigate('AppointmentsTab');
+              console.log('Création du rendez-vous:', appointmentData);
+              console.log('Type de serviceId:', typeof appointmentData.serviceId);
+              console.log('Valeurs individuelles:', {
+                clientName: appointmentData.clientName,
+                clientEmail: appointmentData.clientEmail, 
+                serviceId: appointmentData.serviceId,
+                date: appointmentData.date,
+                time: appointmentData.time
+              });
+              const newAppointment = await createAppointment(appointmentData, token);
+
+              // Pop-up de validation APRÈS la réservation
+              Alert.alert(
+                'Réservation confirmée !',
+                `Votre rendez-vous pour "${selectedService.name || 'le service sélectionné'}" a été réservé pour le ${selectedDate.toLocaleDateString('fr-FR')} à ${selectedTime}`,
+                [
+                  {
+                    text: 'OK',
+                    onPress: () => {
+                      setShowBookingModal(false);
+                      setSelectedService(null);
+                      setClientNotes(''); // Réinitialiser les notes
+                      loadAppointments(); // Recharger les rendez-vous pour mettre à jour le calendrier
+                      // Optionnel: naviguer vers l'écran des rendez-vous
+                      // navigation.navigate('AppointmentsTab');
+                    }
+                  }
+                ]
+              );
+            } catch (error: any) {
+              console.error('Erreur lors de la création du rendez-vous:', error);
+              Alert.alert(
+                'Erreur',
+                error?.response?.data?.message || 'Impossible de créer le rendez-vous. Veuillez réessayer.'
+              );
+            } finally {
+              setIsLoading(false);
             }
-          }
-        ]
-      );
-      
-    } catch (error: any) {
-      console.error('Erreur lors de la création du rendez-vous:', error);
-      Alert.alert(
-        'Erreur',
-        error?.response?.data?.message || 'Impossible de créer le rendez-vous. Veuillez réessayer.'
-      );
-    } finally {
-      setIsLoading(false);
-    }
+          },
+        },
+      ]
+    );
   };
 
   // Debug temporaire pour voir les valeurs de service.category et des catégories
@@ -463,8 +551,31 @@ const ServicesScreen: React.FC = () => {
     return <Loading />;
   }
 
+  // Renvoie la liste par défaut des créneaux horaires (matin et après-midi, 30min)
+  function getDefaultTimeSlots() {
+    // Créneaux de 30 minutes de 9h à 12h et de 14h à 17h
+    const slots = [
+      '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+      '14:00', '14:30', '15:00', '15:30', '16:00', '16:30'
+    ];
+    return slots.map(time => ({
+      time,
+      available: true,
+      period: parseInt(time.split(':')[0], 10) < 12 ? 'morning' : 'afternoon'
+    }));
+  }
+
   return (
-    <SafeAreaView style={[styles.container, isDarkMode && styles.containerDark]}>
+    <Animated.View
+      style={{
+        flex: 1,
+        backgroundColor: modeAnimValue.interpolate({
+          inputRange: [0, 1],
+          outputRange: ['#f8f9fa', '#111827']
+        })
+      }}
+    >
+      <SafeAreaView style={{ flex: 1 }}>
       <View style={[styles.header, isDarkMode && styles.headerDark]}>
         <View style={styles.titleSection}>
           <Text style={[styles.title, isDarkMode && styles.titleDark]}>ServiceBooking</Text>
@@ -479,6 +590,7 @@ const ServicesScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
       </View>
+      
       {showSearch && (
         <TextInput
           style={[styles.searchInput, isDarkMode && styles.searchInputDark]}
@@ -523,7 +635,7 @@ const ServicesScreen: React.FC = () => {
                     selectedCategory === item.id && styles.selectedCategoryText
                   ]}
                 >
-                  {item.name}
+                  {item.name || 'Catégorie'}
                 </Text>
               </TouchableOpacity>
             )}
@@ -563,8 +675,8 @@ const ServicesScreen: React.FC = () => {
               )}
               <View style={styles.serviceContent}>
                 <View style={styles.serviceInfo}>
-                  <Text style={[styles.serviceName, isDarkMode && styles.serviceNameDark]}>{item.name}</Text>
-                  <Text style={[styles.servicePrice, isDarkMode && styles.servicePriceDark]}>{item.price} €</Text>
+                  <Text style={[styles.serviceName, isDarkMode && styles.serviceNameDark]}>{item.name || 'Service'}</Text>
+                  <Text style={[styles.servicePrice, isDarkMode && styles.servicePriceDark]}>{item.price || 0} €</Text>
                 </View>
                 {/* Affichage du nom de la catégorie associée, en couleur bleue et gras */}
                 <Text style={{ 
@@ -576,12 +688,12 @@ const ServicesScreen: React.FC = () => {
                   {getCategoryName((item as ServiceWithCategoryId).categoryId)}
                 </Text>
                 <Text style={[styles.serviceDescription, isDarkMode && styles.serviceDescriptionDark]} numberOfLines={2}>
-                  {item.description}
+                  {item.description || 'Description du service'}
                 </Text>
                 <View style={styles.serviceFooter}>
                   <View style={styles.serviceDuration}>
                     <Ionicons name="time-outline" size={16} color="#666" />
-                    <Text style={styles.serviceDurationText}>{item.duration} min</Text>
+                    <Text style={styles.serviceDurationText}>{item.duration || 0} min</Text>
                   </View>
                   <TouchableOpacity 
                     style={styles.bookButton}
@@ -609,7 +721,7 @@ const ServicesScreen: React.FC = () => {
             <Text style={[styles.modalTitle, isDarkMode && styles.modalTitleDark]}>Choisir une date</Text>
 
             {/* En-tête du calendrier */}
-            <View style={styles.calendarHeader}>
+            <View style={[styles.calendarHeader, isDarkMode && styles.calendarHeaderDark]}>
               <TouchableOpacity 
                 onPress={() => navigateCalendar('prev')} 
                 style={styles.navButton}
@@ -633,12 +745,12 @@ const ServicesScreen: React.FC = () => {
             </View>
 
             {/* Calendrier */}
-            <View style={styles.calendarContainer}>
+            <View style={[styles.calendarContainer, isDarkMode && styles.calendarContainerDark]}>
               {/* En-tête des jours de la semaine */}
-              <View style={styles.weekDaysHeader}>
+              <View style={[styles.weekDaysHeader, isDarkMode && styles.weekDaysHeaderDark]}>
                 {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((dayName, index) => (
                   <View key={`header-${index}`} style={styles.dayNameHeader}>
-                    <Text style={styles.dayNameText}>{dayName}</Text>
+                    <Text style={[styles.dayNameText, isDarkMode && styles.dayNameTextDark]}>{dayName}</Text>
                   </View>
                 ))}
               </View>
@@ -670,9 +782,10 @@ const ServicesScreen: React.FC = () => {
                         return (
                           <TouchableOpacity
                             key={dayItem.toDateString()}
-                            style={[
+                          style={[
                               styles.calendarDayButton,
-                              isToday(dayItem) && styles.todayButton,
+                              isDarkMode && styles.calendarDayButtonDark,
+                              isToday(dayItem) && [styles.todayButton, isDarkMode && styles.todayButtonDark],
                               dayItem.toDateString() === selectedDate.toDateString() && styles.dayButtonSelected,
                               isPast && styles.pastDayButton
                             ]}
@@ -681,8 +794,9 @@ const ServicesScreen: React.FC = () => {
                           >
                             <Text style={[
                               styles.calendarDayText,
+                              isDarkMode && styles.calendarDayTextDark,
                               dayItem.toDateString() === selectedDate.toDateString() && styles.selectedDayText,
-                              isPast && styles.pastDayText
+                              isPast && [styles.pastDayText, isDarkMode && styles.pastDayTextDark]
                             ]}>
                               {dayItem.getDate()}
                             </Text>
@@ -702,12 +816,20 @@ const ServicesScreen: React.FC = () => {
               </View>
             </View>
 
-            {/* Bouton fermer */}
-            <TouchableOpacity 
-              style={styles.closeCalendarButton}
+            {/* Bouton fermer modernisé */}
+            <TouchableOpacity
+              style={[
+                styles.closeIconButton,
+                isDarkMode && styles.closeIconButtonDark
+              ]}
               onPress={() => setShowCalendarModal(false)}
+              accessibilityLabel="Fermer le calendrier"
             >
-              <Text style={styles.closeCalendarText}>Fermer</Text>
+              <Ionicons
+                name="close"
+                size={24}
+                color={isDarkMode ? '#F3F4F6' : '#333'}
+              />
             </TouchableOpacity>
           </View>
         </View>
@@ -720,15 +842,23 @@ const ServicesScreen: React.FC = () => {
         transparent={true}
         onRequestClose={() => setShowBookingModal(false)}
       >
-        <View style={[styles.modalOverlay, isDarkMode && styles.modalOverlayDark]}>
-          <View style={[styles.modalContent, isDarkMode && styles.modalContentDark]}>
+        <View style={[
+          styles.modalOverlay,
+          isDarkMode && styles.modalOverlayDark,
+          isDarkMode && { borderColor: '#374151', borderWidth: 1 }
+        ]}>
+          <View style={[
+            styles.modalContent,
+            isDarkMode && styles.modalContentDark,
+            isDarkMode && { borderColor: '#374151', borderWidth: 1, shadowColor: '#000', shadowOpacity: 0.7, shadowRadius: 12 }
+          ]}>
             <Text style={[styles.modalTitle, isDarkMode && styles.modalTitleDark]}>Choisir un créneau</Text>
             
             {selectedService && (
               <View style={styles.serviceInfoModal}>
-                <Text style={styles.serviceNameModal}>{selectedService.name}</Text>
-                <Text style={styles.servicePriceModal}>{selectedService.price}€ • {selectedService.duration} min</Text>
-                <Text style={styles.serviceDescModal}>{selectedService.description}</Text>
+                <Text style={styles.serviceNameModal}>{selectedService.name || 'Service sélectionné'}</Text>
+                <Text style={styles.servicePriceModal}>{selectedService.price || 0}€ • {selectedService.duration || 0} min</Text>
+                <Text style={styles.serviceDescModal}>{selectedService.description || 'Description du service'}</Text>
               </View>
             )}
 
@@ -794,21 +924,138 @@ const ServicesScreen: React.FC = () => {
               return null;
             })()}
 
-            {/* Sélection de l'heure */}
-            <View style={styles.timeSection}>
-              <Text style={styles.sectionLabel}>Créneaux disponibles</Text>
+            {/* Sélection de l'heure - Section améliorée */}
+            <Animated.View 
+              style={[
+                styles.timeSection,
+                {
+                  opacity: timeSectionOpacity,
+                  transform: [{ scale: timeSectionScale }]
+                }
+              ]}
+            >
+              <View style={styles.timeSectionHeader}>
+                <Ionicons name="time-outline" size={22} color="#3498db" />
+                <Text style={styles.sectionLabelEnhanced}>Choisissez votre horaire</Text>
+              </View>
+              
+              {/* Indicateur de progression */}
+              <View style={styles.progressIndicator}>
+                <View style={styles.progressStep}>
+                  <View style={[styles.progressDot, styles.progressDotCompleted]}>
+                    <Ionicons name="checkmark" size={12} color="#fff" />
+                  </View>
+                  <Text style={styles.progressStepText}>Service</Text>
+                </View>
+                <View style={styles.progressLine}></View>
+                <View style={styles.progressStep}>
+                  <View style={[styles.progressDot, styles.progressDotCompleted]}>
+                    <Ionicons name="checkmark" size={12} color="#fff" />
+                  </View>
+                  <Text style={styles.progressStepText}>Date</Text>
+                </View>
+                <View style={styles.progressLine}></View>
+                <View style={styles.progressStep}>
+                  <View style={[styles.progressDot, selectedTime ? styles.progressDotCompleted : styles.progressDotActive]}>
+                    {selectedTime ? (
+                      <Ionicons name="checkmark" size={12} color="#fff" />
+                    ) : (
+                      <Text style={styles.progressDotNumber}>3</Text>
+                    )}
+                  </View>
+                  <Text style={styles.progressStepText}>Heure</Text>
+                </View>
+              </View>
+              
+              {/* Indication de l'heure sélectionnée */}
+              {selectedTime && (
+                <Animated.View 
+                  style={[
+                    styles.selectedTimeIndicator,
+                    {
+                      transform: [{ scale: selectedTimeAnimation }]
+                    }
+                  ]}
+                >
+                  <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                  <Text style={styles.selectedTimeText}>
+                    Créneau confirmé : {selectedTime}
+                  </Text>
+                  <TouchableOpacity 
+                    style={styles.changeTimeButton}
+                    onPress={() => setSelectedTime('')}
+                  >
+                    <Text style={styles.changeTimeText}>Modifier</Text>
+                  </TouchableOpacity>
+                </Animated.View>
+              )}
+              
+              {/* Instructions pour l'utilisateur */}
+              {!selectedTime ? (
+                <View style={styles.instructionsBox}>
+                  <Ionicons name="information-circle-outline" size={16} color="#3498db" />
+                  <Text style={styles.instructionsText}>
+                    Sélectionnez un créneau horaire disponible pour continuer
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.successBox}>
+                  <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                  <Text style={styles.successText}>
+                    Parfait ! Vous pouvez maintenant confirmer votre réservation
+                  </Text>
+                </View>
+              )}
               
               {loadingSlots ? (
                 <View style={styles.loadingContainer}>
-                  <Text style={styles.loadingText}>Chargement des créneaux...</Text>
+                  <Ionicons name="time-outline" size={24} color="#3498db" />
+                  <Text style={styles.loadingText}>Vérification des créneaux disponibles...</Text>
+                  <Text style={styles.loadingSubtext}>
+                    Nous vérifions les disponibilités pour {selectedDate.toLocaleDateString('fr-FR', { 
+                      weekday: 'long', 
+                      day: 'numeric', 
+                      month: 'long' 
+                    })}
+                  </Text>
                 </View>
               ) : (
                 <>
-                  {/* Créneaux du matin */}
+                  {(() => {
+                    const totalSlots = availableSlots.length > 0 ? availableSlots : getDefaultTimeSlots();
+                    console.log('🎬 Rendu des créneaux - Total:', totalSlots.length);
+                    console.log('🎬 availableSlots.length:', availableSlots.length);
+                    console.log('🎬 getDefaultTimeSlots().length:', getDefaultTimeSlots().length);
+                    
+                    const morningSlots = totalSlots.filter((slot: any) => {
+                      const hour = parseInt(slot.time.split(':')[0]);
+                      return hour >= 9 && hour < 12;
+                    });
+                    console.log('🌅 Créneaux matin filtrés:', morningSlots);
+                    
+                    const afternoonSlots = totalSlots.filter((slot: any) => {
+                      const hour = parseInt(slot.time.split(':')[0]);
+                      return hour >= 14 && hour < 17;
+                    });
+                    console.log('🌇 Créneaux après-midi filtrés:', afternoonSlots);
+                    
+                    return null; // On retourne null car c'est juste pour les logs
+                  })()}
+                  
+                  {/* Créneaux du matin - Section améliorée */}
                   <View style={styles.timePeriodSection}>
                     <View style={styles.timePeriodHeader}>
                       <Ionicons name="sunny-outline" size={20} color="#f39c12" />
-                      <Text style={styles.timePeriodTitle}>Matin (9h - 12h)</Text>
+                      <Text style={styles.timePeriodTitle}>Matinée (9h - 12h)</Text>
+                      <View style={styles.periodBadge}>
+                        <Text style={styles.periodBadgeText}>
+                          {(availableSlots.length > 0 ? availableSlots : getDefaultTimeSlots())
+                            .filter((slot: any) => {
+                              const hour = parseInt(slot.time.split(':')[0]);
+                              return hour >= 9 && hour < 12 && slot.available;
+                            }).length} dispos
+                        </Text>
+                      </View>
                     </View>
                     <View style={styles.timeButtonsContainer}>
                       {(availableSlots.length > 0 ? availableSlots : getDefaultTimeSlots())
@@ -816,34 +1063,69 @@ const ServicesScreen: React.FC = () => {
                           const hour = parseInt(slot.time.split(':')[0]);
                           return hour >= 9 && hour < 12;
                         })
-                        .map((slot: any, index: number) => (
-                          <TouchableOpacity
-                            key={`morning-${index}`}
-                            style={[
-                              styles.timeButton,
-                              selectedTime === slot.time && styles.timeButtonSelected,
-                              !slot.available && styles.timeButtonDisabled
-                            ]}
-                            onPress={() => slot.available && setSelectedTime(slot.time)}
-                            disabled={!slot.available}
-                          >
-                            <Text style={[
-                              styles.timeButtonText,
-                              selectedTime === slot.time && styles.timeButtonTextSelected,
-                              !slot.available && styles.timeButtonTextDisabled
-                            ]}>
-                              {slot.time}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
+                        .map((slot: any, index: number) => {
+                          console.log(`🔘 Bouton matin ${index}: ${slot.time} - disponible: ${slot.available}`);
+                          return (
+                            <TouchableOpacity
+                              key={`morning-${index}`}
+                              style={[
+                                styles.timeButton,
+                                selectedTime === slot.time && styles.timeButtonSelected,
+                                !slot.available && styles.timeButtonDisabled
+                              ]}
+                              onPress={() => {
+                                console.log(`🎯 Clic sur créneau: ${slot.time}`);
+                                if (slot.available) {
+                                  setSelectedTime(slot.time);
+                                  console.log(`✅ Heure sélectionnée: ${slot.time}`);
+                                  
+                                  // Animation de confirmation
+                                  Animated.sequence([
+                                    Animated.timing(selectedTimeAnimation, {
+                                      toValue: 1.1,
+                                      duration: 150,
+                                      useNativeDriver: true,
+                                    }),
+                                    Animated.timing(selectedTimeAnimation, {
+                                      toValue: 1,
+                                      duration: 150,
+                                      useNativeDriver: true,
+                                    })
+                                  ]).start();
+                                }
+                              }}
+                              disabled={!slot.available}
+                            >
+                              <Text style={[
+                                styles.timeButtonText,
+                                selectedTime === slot.time && styles.timeButtonTextSelected,
+                                !slot.available && styles.timeButtonTextDisabled
+                              ]}>
+                                {slot.time}
+                              </Text>
+                              {selectedTime === slot.time && (
+                                <Ionicons name="checkmark-circle" size={14} color="#fff" style={styles.timeButtonCheck} />
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })}
                     </View>
                   </View>
 
-                  {/* Créneaux de l'après-midi */}
+                  {/* Créneaux de l'après-midi - Section améliorée */}
                   <View style={styles.timePeriodSection}>
                     <View style={styles.timePeriodHeader}>
                       <Ionicons name="partly-sunny-outline" size={20} color="#e67e22" />
                       <Text style={styles.timePeriodTitle}>Après-midi (14h - 17h)</Text>
+                      <View style={styles.periodBadge}>
+                        <Text style={styles.periodBadgeText}>
+                          {(availableSlots.length > 0 ? availableSlots : getDefaultTimeSlots())
+                            .filter((slot: any) => {
+                              const hour = parseInt(slot.time.split(':')[0]);
+                              return hour >= 14 && hour < 17 && slot.available;
+                            }).length} dispos
+                        </Text>
+                      </View>
                     </View>
                     <View style={styles.timeButtonsContainer}>
                       {(availableSlots.length > 0 ? availableSlots : getDefaultTimeSlots())
@@ -851,31 +1133,57 @@ const ServicesScreen: React.FC = () => {
                           const hour = parseInt(slot.time.split(':')[0]);
                           return hour >= 14 && hour < 17;
                         })
-                        .map((slot: any, index: number) => (
-                          <TouchableOpacity
-                            key={`afternoon-${index}`}
-                            style={[
-                              styles.timeButton,
-                              selectedTime === slot.time && styles.timeButtonSelected,
-                              !slot.available && styles.timeButtonDisabled
-                            ]}
-                            onPress={() => slot.available && setSelectedTime(slot.time)}
-                            disabled={!slot.available}
-                          >
-                            <Text style={[
-                              styles.timeButtonText,
-                              selectedTime === slot.time && styles.timeButtonTextSelected,
-                              !slot.available && styles.timeButtonTextDisabled
-                            ]}>
-                              {slot.time}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
+                        .map((slot: any, index: number) => {
+                          console.log(`🔘 Bouton après-midi ${index}: ${slot.time} - disponible: ${slot.available}`);
+                          return (
+                            <TouchableOpacity
+                              key={`afternoon-${index}`}
+                              style={[
+                                styles.timeButton,
+                                selectedTime === slot.time && styles.timeButtonSelected,
+                                !slot.available && styles.timeButtonDisabled
+                              ]}
+                              onPress={() => {
+                                console.log(`🎯 Clic sur créneau: ${slot.time}`);
+                                if (slot.available) {
+                                  setSelectedTime(slot.time);
+                                  console.log(`✅ Heure sélectionnée: ${slot.time}`);
+                                  
+                                  // Animation de confirmation
+                                  Animated.sequence([
+                                    Animated.timing(selectedTimeAnimation, {
+                                      toValue: 1.1,
+                                      duration: 150,
+                                      useNativeDriver: true,
+                                    }),
+                                    Animated.timing(selectedTimeAnimation, {
+                                      toValue: 1,
+                                      duration: 150,
+                                      useNativeDriver: true,
+                                    })
+                                  ]).start();
+                                }
+                              }}
+                              disabled={!slot.available}
+                            >
+                              <Text style={[
+                                styles.timeButtonText,
+                                selectedTime === slot.time && styles.timeButtonTextSelected,
+                                !slot.available && styles.timeButtonTextDisabled
+                              ]}>
+                                {slot.time}
+                              </Text>
+                              {selectedTime === slot.time && (
+                                <Ionicons name="checkmark-circle" size={14} color="#fff" style={styles.timeButtonCheck} />
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })}
                     </View>
                   </View>
                 </>
               )}
-            </View>
+            </Animated.View>
 
             {/* Section Notes */}
             <View style={styles.notesSection}>
@@ -896,6 +1204,40 @@ const ServicesScreen: React.FC = () => {
             </View>
             </ScrollView>
 
+            {/* Résumé de la réservation */}
+            {selectedTime && (
+              <View style={styles.bookingSummary}>
+                <View style={styles.summaryHeader}>
+                  <Ionicons name="document-text-outline" size={20} color="#3498db" />
+                  <Text style={styles.summaryTitle}>Résumé de votre réservation</Text>
+                </View>
+                <View style={styles.summaryContent}>
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>Service :</Text>
+                    <Text style={styles.summaryValue}>{selectedService?.name}</Text>
+                  </View>
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>Date :</Text>
+                    <Text style={styles.summaryValue}>
+                      {selectedDate.toLocaleDateString('fr-FR', { 
+                        weekday: 'long', 
+                        day: 'numeric', 
+                        month: 'long' 
+                      })}
+                    </Text>
+                  </View>
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>Heure :</Text>
+                    <Text style={styles.summaryValue}>{selectedTime}</Text>
+                  </View>
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>Prix :</Text>
+                    <Text style={[styles.summaryValue, styles.summaryPrice]}>{selectedService?.price || 0}€</Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
             {/* Boutons d'action - en dehors du ScrollView */}
             <View style={styles.modalActions}>
               <TouchableOpacity 
@@ -910,22 +1252,95 @@ const ServicesScreen: React.FC = () => {
               </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.confirmButton}
-                onPress={confirmBooking}
-                disabled={isLoading}
+                onPress={() => {
+                  console.log('🎯 Tentative de confirmation de réservation');
+                  console.log('🕐 Heure sélectionnée:', selectedTime);
+                  console.log('📅 Date sélectionnée:', selectedDate);
+                  console.log('🔧 Service sélectionné:', selectedService?.name);
+                  confirmBooking();
+                }}
+                disabled={isLoading || !selectedTime}
               >
                 <Text style={styles.confirmButtonText}>
-                  {isLoading ? 'Réservation...' : 'Confirmer'}
+                  {isLoading 
+                    ? 'Réservation...' 
+                    : selectedTime 
+                      ? `Confirmer pour ${selectedTime}` 
+                      : 'Sélectionnez une heure'
+                  }
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+      </SafeAreaView>
+    </Animated.View>
   );
-};
+}
 
 const styles = StyleSheet.create({
+  monthGridDark: {
+    backgroundColor: '#1F2937',
+  },
+  // --- Styles HomeScreen calendar ---
+  navButtonDark: {
+    backgroundColor: '#374151',
+  },
+  currentMonthText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    textTransform: 'capitalize',
+  },
+  currentMonthTextDark: {
+    color: '#fff',
+  },
+  monthViewEmptyDay: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    elevation: 0,
+    shadowOpacity: 0,
+    opacity: 0.4,
+    width: 36,
+    height: 36,
+  },
+  monthViewDayButton: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 18,
+  },
+  monthViewDayButtonDark: {
+    backgroundColor: '#111827',
+  },
+  monthViewDayButtonSelected: {
+    backgroundColor: '#4F8EF7',
+  },
+  monthViewTodayButton: {
+    backgroundColor: '#e8f1ff',
+  },
+  monthViewTodayText: {
+    color: '#4F8EF7',
+    fontWeight: '600',
+  },
+  monthViewDayLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+    textAlign: 'center',
+  },
+  monthViewDayLabelDark: {
+    color: '#fff',
+  },
+  monthViewSelectedDayText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  disabledDay: {
+    opacity: 0.3,
+  },
   container: {
     flex: 1,
     backgroundColor: '#f8f9fa',
@@ -1222,8 +1637,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    fontSize: 14,
+    fontSize: 16,
     color: '#666',
+    fontStyle: 'italic',
+    marginTop: 12,
+    fontWeight: '500',
+  },
+  loadingSubtext: {
+    fontSize: 14,
+    color: '#999',
+    marginTop: 8,
+    textAlign: 'center',
     fontStyle: 'italic',
   },
   timePeriodSection: {
@@ -1233,12 +1657,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 10,
+    justifyContent: 'space-between',
   },
   timePeriodTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
     marginLeft: 8,
+    flex: 1,
   },
   timeButtonsContainer: {
     flexDirection: 'row',
@@ -1336,19 +1762,30 @@ const styles = StyleSheet.create({
   pastDayText: {
     color: '#999',
   },
-  closeCalendarButton: {
-    marginTop: 20,
-    paddingVertical: 12,
+  closeIconButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#f8f9fa',
-    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    zIndex: 10,
   },
-  closeCalendarText: {
-    textAlign: 'center',
-    fontSize: 16,
-    color: '#666',
-    fontWeight: '500',
+  closeIconButtonDark: {
+    backgroundColor: '#374151',
+    borderColor: '#4B5563',
+    shadowColor: '#000',
+    shadowOpacity: 0.7,
+    shadowRadius: 8,
   },
   // Styles pour la section date sélectionnée
   selectedDateSection: {
@@ -1602,6 +2039,32 @@ const styles = StyleSheet.create({
   calendarModalContentDark: {
     backgroundColor: '#1F2937', // gray-800
   },
+  calendarHeaderDark: {
+    backgroundColor: '#111827',
+  },
+  calendarContainerDark: {
+    backgroundColor: '#111827',
+    borderColor: '#374151',
+  },
+  weekDaysHeaderDark: {
+    backgroundColor: '#1F2937',
+  },
+  dayNameTextDark: {
+    color: '#9CA3AF',
+  },
+  calendarDayButtonDark: {
+    backgroundColor: '#374151',
+  },
+  calendarDayTextDark: {
+    color: '#F3F4F6',
+  },
+  todayButtonDark: {
+    backgroundColor: '#2563EB',
+    borderColor: '#60A5FA',
+  },
+  pastDayTextDark: {
+    color: '#6B7280',
+  },
   modalTitleDark: {
     color: '#FFFFFF',
   },
@@ -1621,6 +2084,196 @@ const styles = StyleSheet.create({
   },
   filtersTitleDark: {
     color: '#FFFFFF',
+  },
+  // Styles pour l'indicateur d'heure sélectionnée
+  selectedTimeIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e8f5e8',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#10B981',
+  },
+  selectedTimeText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#10B981',
+    marginLeft: 8,
+    flex: 1,
+  },
+  changeTimeButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#10B981',
+    borderRadius: 6,
+  },
+  changeTimeText: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  // Styles pour les badges de période
+  periodBadge: {
+    backgroundColor: '#e3f2fd',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  periodBadgeText: {
+    fontSize: 12,
+    color: '#3498db',
+    fontWeight: '600',
+  },
+  // Styles pour les icônes de confirmation des boutons de temps
+  timeButtonCheck: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+  },
+  // Styles pour l'en-tête de section amélioré
+  timeSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  sectionLabelEnhanced: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#333',
+    marginLeft: 10,
+  },
+  // Styles pour l'indicateur de progression
+  progressIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 20,
+  },
+  progressStep: {
+    alignItems: 'center',
+  },
+  progressDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  progressDotActive: {
+    backgroundColor: '#3498db',
+  },
+  progressDotCompleted: {
+    backgroundColor: '#10B981',
+  },
+  progressDotNumber: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  progressLine: {
+    width: 30,
+    height: 2,
+    backgroundColor: '#e0e0e0',
+    marginHorizontal: 10,
+  },
+  progressStepText: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500',
+  },
+  // Styles pour la boîte d'instructions
+  instructionsBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f8ff',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3498db',
+  },
+  instructionsText: {
+    fontSize: 14,
+    color: '#2563EB',
+    marginLeft: 8,
+    flex: 1,
+    fontWeight: '500',
+  },
+  // Styles pour la boîte de succès
+  successBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0fff4',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderLeftWidth: 4,
+    borderLeftColor: '#10B981',
+  },
+  successText: {
+    fontSize: 14,
+    color: '#059669',
+    marginLeft: 8,
+    flex: 1,
+    fontWeight: '500',
+  },
+  // Styles pour le résumé de réservation
+  bookingSummary: {
+    backgroundColor: '#f8f9ff',
+    borderRadius: 12,
+    padding: 16,
+    margin: 16,
+    marginTop: 0,
+    borderWidth: 1,
+    borderColor: '#e3f2fd',
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginLeft: 8,
+  },
+  summaryContent: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 12,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  summaryLabel: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  summaryValue: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'right',
+  },
+  summaryPrice: {
+    color: '#3498db',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
 

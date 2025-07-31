@@ -1,7 +1,7 @@
 import React, { useContext } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Appointment } from '../../types/index';
-import { formatDate, formatTime } from '../../utils/date';
+import { formatDateWithTime } from '../../utils/date';
 import { ThemeContext } from '../../contexts/ThemeContext';
 
 interface AppointmentCardProps {
@@ -16,7 +16,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({
   onCancel 
 }) => {
   const { isDarkMode } = useContext(ThemeContext);
-  const { id, service, date, status } = appointment;
+  const { id, service, date, time, status } = appointment;
   
   // Déterminer la couleur du statut
   const getStatusColor = () => {
@@ -47,7 +47,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({
       <View style={styles.content}>
         <Text style={[styles.serviceName, isDarkMode && styles.serviceNameDark]}>{service?.name || 'Service non défini'}</Text>
         <View style={styles.row}>
-          <Text style={[styles.dateTime, isDarkMode && styles.dateTimeDark]}>{formatDate(date)} à {formatTime(date)}</Text>
+          <Text style={[styles.dateTime, isDarkMode && styles.dateTimeDark]}>{formatDateWithTime(date, time)}</Text>
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor() }]}>
             <Text style={styles.statusText}>{getStatusText()}</Text>
           </View>
