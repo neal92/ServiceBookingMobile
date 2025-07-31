@@ -1,5 +1,6 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Animated } from 'react-native';
 
 type ThemeType = 'light' | 'dark';
 
@@ -7,16 +8,19 @@ interface ThemeContextType {
   theme: ThemeType;
   toggleTheme: () => void;
   isDarkMode: boolean;
+  themeOpacity: Animated.Value; // Pour l'animation de transition
 }
 
 export const ThemeContext = createContext<ThemeContextType>({
   theme: 'light',
   toggleTheme: () => {},
   isDarkMode: false,
+  themeOpacity: new Animated.Value(1),
 });
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setTheme] = useState<ThemeType>('light');
+  const themeOpacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     // Charger le thème sauvegardé au démarrage
@@ -35,6 +39,20 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const toggleTheme = async () => {
+    // Animation de transition
+    Animated.sequence([
+      Animated.timing(themeOpacity, {
+        toValue: 0.5,
+        duration: 150,
+        useNativeDriver: true, // Changé à true pour les animations d'opacité
+      }),
+      Animated.timing(themeOpacity, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: true, // Changé à true pour les animations d'opacité
+      })
+    ]).start();
+
     const newTheme = theme === 'light' ? 'dark' : 'light';
     setTheme(newTheme);
     try {
@@ -48,7 +66,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <ThemeContext.Provider value={{ 
       theme, 
       toggleTheme,
-      isDarkMode: theme === 'dark'
+      isDarkMode: theme === 'dark',
+      themeOpacity
     }}>
       {children}
     </ThemeContext.Provider>

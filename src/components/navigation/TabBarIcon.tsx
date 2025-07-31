@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 interface TabBarIconProps {
@@ -10,14 +10,54 @@ interface TabBarIconProps {
 }
 
 const TabBarIcon: React.FC<TabBarIconProps> = ({ iconName, focused, color, label }) => {
+  const scaleAnimation = useRef(new Animated.Value(1)).current;
+  const opacityAnimation = useRef(new Animated.Value(0.6)).current;
+
+  useEffect(() => {
+    if (focused) {
+      // Animation quand l'onglet devient actif
+      Animated.parallel([
+        Animated.spring(scaleAnimation, {
+          toValue: 1.1,
+          useNativeDriver: true,
+          tension: 150,
+          friction: 8,
+        }),
+        Animated.timing(opacityAnimation, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        })
+      ]).start();
+    } else {
+      // Animation quand l'onglet devient inactif
+      Animated.parallel([
+        Animated.spring(scaleAnimation, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 150,
+          friction: 8,
+        }),
+        Animated.timing(opacityAnimation, {
+          toValue: 0.6,
+          duration: 200,
+          useNativeDriver: true,
+        })
+      ]).start();
+    }
+  }, [focused]);
+
   return (
     <View style={styles.container}>
-      <View style={[
+      <Animated.View style={[
         styles.iconContainer,
-        focused ? { backgroundColor: `${color}15` } : {} // Léger fond plus visible (15% d'opacité)
+        {
+          transform: [{ scale: scaleAnimation }],
+          opacity: opacityAnimation,
+        }
       ]}>
-        <Ionicons name={iconName as any} size={24} color={color} /> {/* Icône légèrement plus grande */}
-      </View>
+        <Ionicons name={iconName as any} size={24} color={color} /> {/* Taille normale */}
+      </Animated.View>
       <Text 
         numberOfLines={1} // Assure que le texte reste sur une seule ligne
         style={[
@@ -28,7 +68,17 @@ const TabBarIcon: React.FC<TabBarIconProps> = ({ iconName, focused, color, label
       >
         {label}
       </Text>
-      {focused && <View style={[styles.indicator, { backgroundColor: color }]} />}
+      {focused && (
+        <Animated.View 
+          style={[
+            styles.indicator, 
+            { 
+              backgroundColor: color,
+              opacity: opacityAnimation,
+            }
+          ]} 
+        />
+      )}
     </View>
   );
 };
@@ -42,13 +92,14 @@ const styles = StyleSheet.create({
     marginTop: 0, // Pas de décalage vertical
   },
   iconContainer: {
-    padding: 8, // Plus de padding pour que les icônes soient bien visibles
+    padding: 8, // Padding normal
     borderRadius: 12,
     marginBottom: 2, // Espace entre l'icône et le texte
     minWidth: 32, // Largeur minimale pour les icônes
     minHeight: 32, // Hauteur minimale pour les icônes
     alignItems: 'center',
     justifyContent: 'center',
+    // Pas d'arrière-plan par défaut pour éviter de cacher l'icône
   },
   label: {
     fontSize: 12, // Taille de police augmentée pour meilleure lisibilité

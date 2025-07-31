@@ -1,5 +1,5 @@
-import React, { useContext, useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, FlatList, Image } from 'react-native';
+import React, { useContext, useState, useRef, useEffect } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, FlatList, Image, Animated, Dimensions } from 'react-native';
 import { Card, Title, Paragraph, Button, IconButton } from 'react-native-paper';
 import { AuthContext } from '../../contexts/AuthContext';
 import { ThemeContext } from '../../contexts/ThemeContext';
@@ -21,6 +21,12 @@ const HomeScreen = ({ navigation }: any) => {
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  
+  // Animations pour le calendrier
+  const calendarHeight = useRef(new Animated.Value(160)).current; // Augmenté à 160 pour bien afficher les jours et le bouton
+  const calendarOpacity = useRef(new Animated.Value(1)).current;
+  const monthGridScale = useRef(new Animated.Value(0)).current;
+  
   const [currentWeekStartDate, setCurrentWeekStartDate] = useState(() => {
     const date = new Date();
     // Ajuster au début de la semaine (lundi)
@@ -28,6 +34,58 @@ const HomeScreen = ({ navigation }: any) => {
     const diff = date.getDate() - day + (day === 0 ? -6 : 1); // Ajuster quand c'est dimanche
     return new Date(date.setDate(diff));
   });
+
+  // Animation pour le changement de vue calendrier
+  useEffect(() => {
+    if (viewMode === 'month') {
+      // Animation vers le mode mois
+      Animated.parallel([
+        Animated.timing(calendarHeight, {
+          toValue: 360, // Augmenté de 320 à 360 pour contenir tous les jours du mois
+          duration: 400,
+          useNativeDriver: false,
+        }),
+        Animated.sequence([
+          Animated.timing(calendarOpacity, {
+            toValue: 0.3,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(calendarOpacity, {
+            toValue: 1,
+            duration: 200,
+            useNativeDriver: true,
+          })
+        ]),
+        Animated.spring(monthGridScale, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 100,
+          friction: 8,
+        })
+      ]).start();
+    } else {
+      // Animation vers le mode semaine
+      Animated.parallel([
+        Animated.timing(calendarHeight, {
+          toValue: 160, // Augmenté de 140 à 160 pour plus d'espace avec le bouton
+          duration: 300,
+          useNativeDriver: false,
+        }),
+        Animated.timing(calendarOpacity, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.spring(monthGridScale, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 100,
+          friction: 8,
+        })
+      ]).start();
+    }
+  }, [viewMode]);
 
   React.useEffect(() => {
     const fetchAppointments = async () => {
@@ -180,6 +238,24 @@ const HomeScreen = ({ navigation }: any) => {
     return date.toDateString() === today.toDateString();
   };
 
+  // Fonction pour vérifier si un jour a des rendez-vous et obtenir le statut
+  const getDayAppointmentStatus = (date: Date) => {
+    const dayAppointments = appointments.filter(a => {
+      const appDate = new Date(a.date);
+      return appDate.toDateString() === date.toDateString();
+    });
+    
+    if (dayAppointments.length === 0) return null;
+    
+    // Priorité : confirmé > en attente > autres statuts
+    const hasConfirmed = dayAppointments.some(a => a.status === 'confirmed');
+    const hasPending = dayAppointments.some(a => a.status === 'pending');
+    
+    if (hasConfirmed) return 'confirmed';
+    if (hasPending) return 'pending';
+    return 'other';
+  };
+
   // Filtrer les rendez-vous du jour sélectionné
   const appointmentsOfDay = appointments.filter(a => {
     const appDate = new Date(a.date);
@@ -315,8 +391,10 @@ const HomeScreen = ({ navigation }: any) => {
     >
       <View style={[styles.header, isDarkMode && styles.headerDark]}>
         <View style={styles.titleSection}>
-          <Text style={[styles.appName, isDarkMode && styles.appNameDark]}>ServiceBooking</Text>
-          <Text style={[styles.headerSubtitle, isDarkMode && styles.headerSubtitleDark]}>Simplifiez votre gestion de rendez-vous</Text>
+          <Text style={[styles.appName, isDarkMode && styles.appNameDark]}>
+            Bienvenue chez <Text style={[styles.appName, isDarkMode && styles.appNameDark]}>ServiceBooking</Text> {user ? user.firstName : ''}!
+          </Text>
+          <Text style={[styles.headerSubtitle, isDarkMode && styles.headerSubtitleDark]}>Gérer facilement vos rendez-vous de chez votre prestataire ❤️</Text>
         </View>
         <TouchableOpacity
           style={[styles.themeModeButton, isDarkMode && styles.themeModeButtonDark]}
@@ -329,15 +407,6 @@ const HomeScreen = ({ navigation }: any) => {
           />
         </TouchableOpacity>
       </View>
-      
-      {/* Section de bienvenue */}
-      {user && (
-        <View style={[styles.welcomeSection, isDarkMode && styles.welcomeSectionDark]}>
-          <Text style={[styles.welcome, isDarkMode && styles.textDark]}>
-            Bienvenue {user.firstName}!
-          </Text>
-        </View>
-      )}
       
       {/* Section des statistiques des rendez-vous */}
       {user && (
@@ -373,8 +442,24 @@ const HomeScreen = ({ navigation }: any) => {
             <View style={styles.calendarControls}>
               <TouchableOpacity 
                 style={[styles.viewModeButton, isDarkMode && styles.buttonDark]} 
-                onPress={() => setViewMode(viewMode === 'week' ? 'month' : 'week')}
-                activeOpacity={0.7}
+                onPress={() => {
+                  // Animation du bouton avant le changement
+                  Animated.sequence([
+                    Animated.timing(calendarOpacity, {
+                      toValue: 0.7,
+                      duration: 100,
+                      useNativeDriver: true,
+                    }),
+                    Animated.timing(calendarOpacity, {
+                      toValue: 1,
+                      duration: 100,
+                      useNativeDriver: true,
+                    })
+                  ]).start();
+                  
+                  setViewMode(viewMode === 'week' ? 'month' : 'week');
+                }}
+                activeOpacity={0.8}
               >
                 <View style={{flexDirection: 'row', alignItems: 'center'}}>
                   <Ionicons 
@@ -396,7 +481,16 @@ const HomeScreen = ({ navigation }: any) => {
           </View>
           
           {/* Navigation et vue du calendrier */}
-          <View style={{flex: 1}}>
+          <Animated.View style={{
+            flex: 1,
+            height: calendarHeight,
+            overflow: 'visible' // Changé de 'hidden' à 'visible' pour éviter de couper les jours
+          }}>
+            <Animated.View style={{
+              flex: 1,
+              opacity: calendarOpacity,
+              marginBottom: 10, // Réduit de 20 à 10 pour moins d'espace avant le texte
+            }}>
               {viewMode === 'week' ? (
                 <View>
                   {/* Boutons de navigation au-dessus */}
@@ -431,6 +525,8 @@ const HomeScreen = ({ navigation }: any) => {
                     renderItem={({ item }) => {
                       if (!item) return null;
                       
+                      const appointmentStatus = getDayAppointmentStatus(item);
+                      
                       return (
                         <TouchableOpacity
                           style={[
@@ -448,11 +544,21 @@ const HomeScreen = ({ navigation }: any) => {
                           ]}>
                             {item.toLocaleDateString('fr-FR', { weekday: 'short' })}
                           </Text>
-                          <Text style={[
-                            styles.dayNumber,
-                            isDarkMode && styles.dayNumberDark,
-                            item.toDateString() === selectedDate.toDateString() && { color: '#fff' }
-                          ]}>{item.getDate()}</Text>
+                          <View style={styles.dayNumberContainer}>
+                            <Text style={[
+                              styles.dayNumber,
+                              isDarkMode && styles.dayNumberDark,
+                              item.toDateString() === selectedDate.toDateString() && { color: '#fff' }
+                            ]}>{item.getDate()}</Text>
+                            {appointmentStatus && (
+                              <View style={[
+                                styles.appointmentDot,
+                                appointmentStatus === 'confirmed' && styles.appointmentDotConfirmed,
+                                appointmentStatus === 'pending' && styles.appointmentDotPending,
+                                appointmentStatus === 'other' && styles.appointmentDotOther
+                              ]} />
+                            )}
+                          </View>
                         </TouchableOpacity>
                       );
                     }}
@@ -495,7 +601,13 @@ const HomeScreen = ({ navigation }: any) => {
                   </View>
                   
                   {/* Jours du mois organisés en grille */}
-                  <View style={styles.monthGrid}>
+                  <Animated.View style={[
+                    styles.monthGrid,
+                    {
+                      transform: [{ scale: monthGridScale }],
+                      opacity: monthGridScale
+                    }
+                  ]}>
                     {(() => {
                       // Récupérer tous les jours à afficher (jours du mois + jours vides)
                       const allDays = days; // Plus besoin de slice car on n'a plus les 7 jours d'en-tête
@@ -528,42 +640,57 @@ const HomeScreen = ({ navigation }: any) => {
                                 ]}
                                 onPress={() => setSelectedDate(dayItem)}
                               >
-                                <Text style={[
-                                  styles.monthViewDayLabel,
-                                  isDarkMode && styles.monthViewDayLabelDark,
-                                  isToday(dayItem) && styles.monthViewTodayText,
-                                  dayItem.toDateString() === selectedDate.toDateString() && styles.monthViewSelectedDayText
-                                ]}>
-                                  {dayItem.getDate()}
-                                </Text>
+                                <View style={styles.dayNumberContainer}>
+                                  <Text style={[
+                                    styles.monthViewDayLabel,
+                                    isDarkMode && styles.monthViewDayLabelDark,
+                                    isToday(dayItem) && styles.monthViewTodayText,
+                                    dayItem.toDateString() === selectedDate.toDateString() && styles.monthViewSelectedDayText
+                                  ]}>
+                                    {dayItem.getDate()}
+                                  </Text>
+                                  {(() => {
+                                    const appointmentStatus = getDayAppointmentStatus(dayItem);
+                                    return appointmentStatus && (
+                                      <View style={[
+                                        styles.appointmentDot,
+                                        appointmentStatus === 'confirmed' && styles.appointmentDotConfirmed,
+                                        appointmentStatus === 'pending' && styles.appointmentDotPending,
+                                        appointmentStatus === 'other' && styles.appointmentDotOther
+                                      ]} />
+                                    );
+                                  })()}
+                                </View>
                               </TouchableOpacity>
                             );
                           })}
                         </View>
                       ));
                     })()}
-                  </View>
+                  </Animated.View>
                 </View>
               )}
-            </View>
+            </Animated.View>
+            </Animated.View>
             
             
           {/* Affichage des rendez-vous du jour sélectionné */}
           {!user ? (
-            <View style={{ alignItems: 'center', marginTop: 24 }}>
+            <View style={{ alignItems: 'center', marginTop: 32 }}> {/* Augmenté de 24 à 32 */}
               <Text style={{ fontSize: 16, color: '#d32f2f', marginBottom: 12, textAlign: 'center' }}>
                 Veuillez vous connecter afin de voir vos rendez-vous
               </Text>
               <Button
                 mode="contained"
-                style={styles.button}
+                style={[styles.button, isDarkMode && styles.buttonDark]}
+                labelStyle={[isDarkMode && styles.buttonTextDark]}
               onPress={() => navigation.navigate('AuthTab' as never)}
               >
                 Se connecter
               </Button>
             </View>
           ) : (
-            <View style={{ marginTop: 16 }}>
+            <View style={{ marginTop: 16 }}> {/* Réduit de 24 à 16 pour moins d'espace */}
               {appointmentsOfDay.length === 0 ? (
                 <>
                   <Text style={{ textAlign: 'center', color: '#888', fontSize: 15 }}>
@@ -573,11 +700,17 @@ const HomeScreen = ({ navigation }: any) => {
                     mode="contained"
                     style={[
                       styles.button, 
-                      { alignSelf: 'center', marginTop: 12 },
+                      { alignSelf: 'center', marginTop: 4, paddingHorizontal: 8, paddingVertical: 2 }, // Encore plus réduit
                       isDarkMode && styles.buttonDark
                     ]}
-                    labelStyle={isDarkMode && styles.buttonTextDark}
-                    onPress={() => navigation.navigate('ServicesTab')}
+                    labelStyle={[isDarkMode && styles.buttonTextDark, { fontSize: 11 }]} // Taille de texte encore plus petite
+                    onPress={() => navigation.navigate('ServicesTab', {
+                      screen: 'Services',
+                      params: { 
+                        selectedDate: selectedDate.toISOString(),
+                        preSelectedDate: true 
+                      }
+                    })}
                   >
                     Prendre un rendez-vous
                   </Button>
@@ -705,6 +838,10 @@ const styles = StyleSheet.create({
   appNameDark: {
     color: '#60A5FA', // Bleu plus clair pour le mode sombre
   },
+  brandHighlightDark: {
+    backgroundColor: '#60A5FA',
+    color: '#111827',
+  },
   headerSubtitleDark: {
     color: '#9CA3AF', // gray-400
   },
@@ -719,10 +856,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#1F2937', // gray-800
   },
   monthViewContainerDark: {
-    backgroundColor: '#1F2937', // gray-800
+    backgroundColor: '#1F2937', // gray-800 - Même couleur que les cards en mode sombre
   },
   buttonDark: {
-    backgroundColor: '#374151', // gray-700
+    backgroundColor: '#60A5FA', // Même couleur que le thème principal en mode sombre
   },
   buttonTextDark: {
     color: '#fff',
@@ -758,6 +895,15 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#4F8EF7',
+  },
+  brandHighlight: {
+    backgroundColor: '#4F8EF7',
+    color: '#fff',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   titleSection: {
     flex: 1,
@@ -863,10 +1009,11 @@ const styles = StyleSheet.create({
   },
   monthViewContainer: {
     flexDirection: 'column',
-    backgroundColor: '#fdfdfd',
+    backgroundColor: '#fff', // Même couleur que les cards
     borderRadius: 12,
-    padding: 20,
-    paddingTop: 12,
+    padding: 12, // Réduit de 20 à 12
+    paddingTop: 8, // Réduit de 12 à 8
+    paddingBottom: 16, // Plus d'espace en bas pour éviter le débordement
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.07,
@@ -874,12 +1021,13 @@ const styles = StyleSheet.create({
     elevation: 2,
     alignSelf: 'stretch',
     width: '100%',
+    minHeight: 280, // Hauteur minimale pour contenir tous les jours
   },
   monthNavigation: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12, // Réduit de 16 à 12
     paddingHorizontal: 8,
   },
   monthNavButton: {
@@ -899,9 +1047,9 @@ const styles = StyleSheet.create({
   weekDaysHeader: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 8, // Réduit de 10 à 8
     width: '100%',
-    gap: 12,
+    gap: 8, // Réduit de 12 à 8 pour correspondre aux weekRow
   },
   monthGrid: {
     flexDirection: 'column',
@@ -911,22 +1059,22 @@ const styles = StyleSheet.create({
   weekRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 6, // Réduit de 8 à 6 pour éviter le débordement
     width: '100%',
-    gap: 12,
+    gap: 8, // Réduit de 12 à 8 pour plus d'espace
   },
   monthViewDayButton: {
-    width: 40,
-    height: 40,
+    width: 36, // Légèrement réduit de 40 à 36 pour plus d'espace
+    height: 36, // Légèrement réduit de 40 à 36 pour plus d'espace
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 20,
+    borderRadius: 18,
   },
   dayNameHeader: {
-    width: 40,
+    width: 36, // Ajusté pour correspondre aux boutons de jours
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 6, // Réduit de 8 à 6
   },
   dayNameText: {
     fontSize: 15,
@@ -974,7 +1122,7 @@ const styles = StyleSheet.create({
   button: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: '#1a73e8',
+    backgroundColor: '#4F8EF7', // Même couleur que le thème principal
     borderRadius: 8,
     marginTop: 8,
   },
@@ -1001,7 +1149,7 @@ const styles = StyleSheet.create({
   daysContainer: {
     flexDirection: 'row',
     marginBottom: 10,
-    paddingVertical: 6,
+    paddingVertical: 10, // Augmenté de 6 à 10 pour plus d'espace vertical
   },
   dayButton: {
     alignItems: 'center',
@@ -1011,8 +1159,8 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     backgroundColor: '#f7f9fc',
     marginHorizontal: 6,
-    minWidth: 56,
-    height: 56,
+    minWidth: 60, // Augmenté de 56 à 60
+    height: 64, // Augmenté de 56 à 64 pour plus d'espace
     elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -1251,7 +1399,7 @@ const styles = StyleSheet.create({
   },
   appointmentSimpleView: {
     alignItems: 'center',
-    paddingVertical: 16,
+    paddingVertical: 8, // Réduit de 16 à 8 pour moins d'espace vertical
     paddingHorizontal: 8,
   },
   appointmentBadge: {
@@ -1282,7 +1430,7 @@ const styles = StyleSheet.create({
   appointmentBadgeContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    padding: 8, // Réduit de 12 à 8 pour un badge plus compact
   },
   badgeDivider: {
     height: 1,
@@ -1294,7 +1442,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.08)',
-    padding: 10,
+    padding: 6, // Réduit de 10 à 6 pour une section plus compacte
   },
   appointmentIcon: {
     marginRight: 10,
@@ -1306,7 +1454,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   viewMoreButton: {
-    backgroundColor: '#1a73e8',
+    backgroundColor: '#4F8EF7', // Même couleur que les autres boutons
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1337,6 +1485,27 @@ const styles = StyleSheet.create({
   monthViewSelectedDayText: {
     color: 'white',
     fontWeight: '600',
+  },
+  dayNumberContainer: {
+    position: 'relative',
+    alignItems: 'center',
+  },
+  appointmentDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    position: 'absolute',
+    top: -2,
+    right: -8,
+  },
+  appointmentDotConfirmed: {
+    backgroundColor: '#10B981', // green-500
+  },
+  appointmentDotPending: {
+    backgroundColor: '#F59E0B', // orange-500
+  },
+  appointmentDotOther: {
+    backgroundColor: '#6B7280', // gray-500
   },
 });
 

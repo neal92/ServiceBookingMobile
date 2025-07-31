@@ -1,6 +1,6 @@
 import React, { useContext } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text } from 'react-native';
+import { View, Text, Animated } from 'react-native';
 import { useAuth } from '../hooks/useAuth';
 import { HomeScreen, ProfileScreen, AppointmentsScreen, ServicesScreen, MessagingScreen } from '../screens/app';
 import AuthNavigator from './AuthNavigator';
@@ -12,21 +12,26 @@ const Tab = createBottomTabNavigator<TabParamList>();
 
 const TabNavigator = () => {
   const { user } = useAuth();
-  const { isDarkMode } = useContext(ThemeContext);
+  const { isDarkMode } = useContext(ThemeContext); // Removed themeOpacity temporarily
   const isAuthenticated = !!user;
 
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerStyle: {
-          backgroundColor: isDarkMode ? '#1F2937' : '#FFFFFF',
-          borderBottomColor: isDarkMode ? '#374151' : '#E5E7EB',
-          borderBottomWidth: 1,
-        },
-        headerTintColor: isDarkMode ? '#FFFFFF' : '#000000',
-        headerTitleStyle: {
-          fontWeight: 'bold',
-        },
+    <View style={{ flex: 1 }}> {/* Changed from Animated.View to View */}
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          headerStyle: {
+            backgroundColor: isDarkMode ? '#1F2937' : '#FFFFFF',
+            borderBottomColor: isDarkMode ? '#374151' : '#E5E7EB',
+            borderBottomWidth: 1,
+          },
+          headerTintColor: isDarkMode ? '#FFFFFF' : '#000000',
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
+          // Animation de transition entre les onglets
+          animationEnabled: true,
+          gestureEnabled: true,
+          gestureDirection: 'horizontal',
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: keyof typeof import('@expo/vector-icons').Ionicons.glyphMap;
 
@@ -96,7 +101,13 @@ const TabNavigator = () => {
         tabBarItemStyle: {
           paddingVertical: 5, // Augmenté de 3 à 5
           marginBottom: 2, // Ajout d'une marge en bas
+          // Animation douce sur les items
+          borderRadius: 12,
+          marginHorizontal: 2,
         },
+        // Ajouter des transitions personnalisées
+        tabBarActiveTintColor: isDarkMode ? '#60A5FA' : '#3498db',
+        tabBarInactiveTintColor: isDarkMode ? '#9CA3AF' : '#666',
       })}
     >
       <Tab.Screen 
@@ -148,6 +159,7 @@ const TabNavigator = () => {
         />
       )}
     </Tab.Navigator>
+    </View>
   );
 };
 
