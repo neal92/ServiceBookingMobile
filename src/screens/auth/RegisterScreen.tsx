@@ -31,6 +31,18 @@ const RegisterScreen = ({ navigation }: any) => {
     }
   };
 
+  // Fonction pour vérifier si le formulaire est valide
+  const isFormValid = () => {
+    return (
+      firstName.trim() !== '' &&
+      email.trim() !== '' &&
+      pseudo.trim() !== '' &&
+      password.trim() !== '' &&
+      confirmPassword.trim() !== '' &&
+      password === confirmPassword
+    );
+  };
+
   const handleRegister = async () => {
     // Validation de base
     if (password !== confirmPassword) {
@@ -169,7 +181,7 @@ const RegisterScreen = ({ navigation }: any) => {
             onPress={handleRegister}
             style={[styles.button, isDarkMode && styles.buttonDark]}
             loading={loading}
-            disabled={loading}
+            disabled={loading || !isFormValid()}
             buttonColor={isDarkMode ? '#60A5FA' : '#1a73e8'}
           >
             Créer mon compte

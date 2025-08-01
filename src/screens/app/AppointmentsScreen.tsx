@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useContext } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, Alert, TouchableOpacity, FlatList } from 'react-native';
+import React, { useState, useEffect, useContext, useRef } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, Alert, TouchableOpacity, FlatList, Animated, Dimensions } from 'react-native';
 import { useAuth } from '../../hooks/useAuth';
 import { ThemeContext } from '../../contexts/ThemeContext';
 import { AppointmentList } from '../../components/appointments/AppointmentList';
 import { Appointment } from '../../types/index';
 import { getUserAppointments, deleteAppointment } from '../../api/appointments';
 import { Ionicons } from '@expo/vector-icons';
+
+const { width: screenWidth } = Dimensions.get('window');
 
 const AppointmentsScreen: React.FC = () => {
   const { token } = useAuth();
@@ -14,6 +16,16 @@ const AppointmentsScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
   const [statusFilter, setStatusFilter] = useState<string>('all'); // Filtre par statut
+  const [dateFilter, setDateFilter] = useState<'closest' | 'farthest'>('closest'); // Filtre par date
+  const [showFilters, setShowFilters] = useState(false); // État pour afficher/cacher les filtres
+  const [showSort, setShowSort] = useState(false); // État pour afficher/cacher le tri
+
+  // Animations pour les onglets
+  const tabAnimationValue = useRef(new Animated.Value(0)).current; // 0 = upcoming, 1 = past
+  const scaleUpcoming = useRef(new Animated.Value(1)).current;
+  const scalePast = useRef(new Animated.Value(1)).current;
+  const filtersAnimationValue = useRef(new Animated.Value(0)).current; // Animation pour les filtres
+  const sortAnimationValue = useRef(new Animated.Value(0)).current; // Animation pour le tri
 
   // Types de statuts disponibles
   const statusOptions = [
@@ -36,7 +48,7 @@ const AppointmentsScreen: React.FC = () => {
       const response = await getUserAppointments(token);
       console.log('📅 Données reçues de l\'API:', response.slice(0, 1)); // Debug: voir la structure des données
       
-      // Adapter les rendez-vous pour fournir un champ 'service' objet
+      // Adapter les rendez-vous pour fournir un champ 'service' objet (prestation)
       const adapted = response.map((apt: any) => ({
         ...apt,
         // Préserver le champ time s'il existe
@@ -123,15 +135,31 @@ const AppointmentsScreen: React.FC = () => {
 
   const currentDate = new Date();
   
+  // Fonction pour créer une date complète avec l'heure
+  const getFullAppointmentDateTime = (appointment: Appointment) => {
+    const aptDate = new Date(appointment.date);
+    
+    // Si il y a une heure spécifiée, l'ajouter à la date
+    if (appointment.time) {
+      const [hours, minutes] = appointment.time.split(':').map(Number);
+      aptDate.setHours(hours, minutes, 0, 0);
+    } else {
+      // Si pas d'heure, considérer le rendez-vous en fin de journée (23h59)
+      aptDate.setHours(23, 59, 59, 999);
+    }
+    
+    return aptDate;
+  };
+  
   // Séparer d'abord par upcoming/past, puis appliquer le filtre de statut
   const allUpcomingAppointments = appointments.filter(apt => {
-    const aptDate = new Date(apt.date);
-    return aptDate >= currentDate && apt.status !== 'cancelled';
+    const fullAptDateTime = getFullAppointmentDateTime(apt);
+    return fullAptDateTime >= currentDate && apt.status !== 'cancelled';
   });
   
   const allPastAppointments = appointments.filter(apt => {
-    const aptDate = new Date(apt.date);
-    return aptDate < currentDate || apt.status === 'cancelled';
+    const fullAptDateTime = getFullAppointmentDateTime(apt);
+    return fullAptDateTime < currentDate || apt.status === 'cancelled';
   });
   
   // Fonction pour filtrer les rendez-vous par statut
@@ -141,9 +169,23 @@ const AppointmentsScreen: React.FC = () => {
     }
     return appointments.filter(apt => apt.status === statusFilter);
   };
+
+  // Fonction pour trier les rendez-vous par date
+  const sortAppointmentsByDate = (appointments: Appointment[]) => {
+    return [...appointments].sort((a, b) => {
+      const dateTimeA = getFullAppointmentDateTime(a).getTime();
+      const dateTimeB = getFullAppointmentDateTime(b).getTime();
+      
+      if (dateFilter === 'closest') {
+        return dateTimeA - dateTimeB; // Du plus proche au plus loin
+      } else {
+        return dateTimeB - dateTimeA; // Du plus loin au plus proche
+      }
+    });
+  };
   
-  const upcomingAppointments = filterAppointmentsByStatus(allUpcomingAppointments);
-  const pastAppointments = filterAppointmentsByStatus(allPastAppointments);
+  const upcomingAppointments = sortAppointmentsByDate(filterAppointmentsByStatus(allUpcomingAppointments));
+  const pastAppointments = sortAppointmentsByDate(filterAppointmentsByStatus(allPastAppointments));
 
   // Fonction pour obtenir le nombre de rendez-vous par statut
   const getStatusCount = (status: string, isUpcoming: boolean = true) => {
@@ -153,6 +195,68 @@ const AppointmentsScreen: React.FC = () => {
       return relevantAppointments.length;
     }
     return relevantAppointments.filter(apt => apt.status === status).length;
+  };
+
+  // Fonctions d'animation pour les onglets
+  const animateTabSwitch = (newTab: 'upcoming' | 'past') => {
+    const targetValue = newTab === 'upcoming' ? 0 : 1;
+    
+    Animated.timing(tabAnimationValue, {
+      toValue: targetValue,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const animateTabPress = (tab: 'upcoming' | 'past') => {
+    const scaleValue = tab === 'upcoming' ? scaleUpcoming : scalePast;
+    
+    Animated.sequence([
+      Animated.timing(scaleValue, {
+        toValue: 0.95,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleValue, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      })
+    ]).start();
+  };
+
+  const handleTabPress = (tab: 'upcoming' | 'past') => {
+    if (tab !== activeTab) {
+      animateTabSwitch(tab);
+      setActiveTab(tab);
+    }
+    animateTabPress(tab);
+  };
+
+  // Fonction pour afficher/cacher les filtres avec animation
+  const toggleFilters = () => {
+    const toValue = showFilters ? 0 : 1;
+    
+    Animated.timing(filtersAnimationValue, {
+      toValue,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+    
+    setShowFilters(!showFilters);
+  };
+
+  // Fonction pour afficher/cacher le tri avec animation
+  const toggleSort = () => {
+    const toValue = showSort ? 0 : 1;
+    
+    Animated.timing(sortAnimationValue, {
+      toValue,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+    
+    setShowSort(!showSort);
   };
 
   return (
@@ -168,100 +272,297 @@ const AppointmentsScreen: React.FC = () => {
       </View>
 
       <View style={[styles.tabContainer, isDarkMode && styles.tabContainerDark]}>
-        <TouchableOpacity
-          style={[
-            styles.tab, 
-            isDarkMode && styles.tabDark,
-            activeTab === 'upcoming' && styles.activeTab
-          ]}
-          onPress={() => setActiveTab('upcoming')}
-        >
-          <Text 
+        <View style={styles.tabWrapper}>
+          <TouchableOpacity
+            style={styles.tab}
+            onPress={() => handleTabPress('upcoming')}
+            activeOpacity={0.8}
+          >
+            <Ionicons 
+              name="calendar-outline" 
+              size={16} 
+              color={activeTab === 'upcoming' ? '#3498db' : '#6B7280'} 
+              style={styles.tabIcon}
+            />
+            <Text 
+              style={[
+                styles.tabText,
+                activeTab === 'upcoming' && styles.activeTabText
+              ]}
+            >
+              À venir ({getStatusCount(statusFilter, true)})
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.tab}
+            onPress={() => handleTabPress('past')}
+            activeOpacity={0.8}
+          >
+            <Ionicons 
+              name="time-outline" 
+              size={16} 
+              color={activeTab === 'past' ? '#3498db' : '#6B7280'} 
+              style={styles.tabIcon}
+            />
+            <Text 
+              style={[
+                styles.tabText,
+                activeTab === 'past' && styles.activeTabText
+              ]}
+            >
+              Passés ({getStatusCount(statusFilter, false)})
+            </Text>
+          </TouchableOpacity>
+        </View>
+        
+        {/* Boutons de filtres et tri - alignés à droite */}
+        <View style={styles.actionButtonsContainerRight}>
+          <TouchableOpacity 
+            onPress={toggleFilters}
             style={[
-              styles.tabText,
-              isDarkMode && styles.tabTextDark,
-              activeTab === 'upcoming' && styles.activeTabText
+              styles.filterToggleButton, 
+              isDarkMode && styles.filterToggleButtonDark,
+              (statusFilter !== 'all') && styles.filterToggleButtonActive
             ]}
           >
-            À venir ({getStatusCount(statusFilter, true)})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.tab, 
-            isDarkMode && styles.tabDark,
-            activeTab === 'past' && styles.activeTab
-          ]}
-          onPress={() => setActiveTab('past')}
-        >
-          <Text 
+            <Ionicons 
+              name={showFilters ? "close" : "filter"} 
+              size={20} 
+              color={
+                (statusFilter !== 'all') 
+                  ? "#fff" 
+                  : (isDarkMode ? "#60A5FA" : "#3498db")
+              } 
+            />
+            <Text style={[
+              styles.filterToggleText, 
+              isDarkMode && styles.filterToggleTextDark,
+              (statusFilter !== 'all') && styles.filterToggleTextActive
+            ]}>
+              {showFilters ? "Fermer" : "Filtres"}
+            </Text>
+            {(statusFilter !== 'all') && (
+              <View style={styles.filterIndicator}>
+                <Text style={styles.filterIndicatorText}>•</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            onPress={toggleSort}
             style={[
-              styles.tabText,
-              isDarkMode && styles.tabTextDark,
-              activeTab === 'past' && styles.activeTabText
+              styles.sortToggleButton, 
+              isDarkMode && styles.sortToggleButtonDark,
+              (dateFilter !== 'closest') && styles.sortToggleButtonActive
             ]}
           >
-            Passés ({getStatusCount(statusFilter, false)})
-          </Text>
-        </TouchableOpacity>
+            <Ionicons 
+              name={showSort ? "close" : "swap-vertical"} 
+              size={20} 
+              color={
+                (dateFilter !== 'closest') 
+                  ? "#fff" 
+                  : (isDarkMode ? "#60A5FA" : "#3498db")
+              } 
+            />
+            <Text style={[
+              styles.sortToggleText, 
+              isDarkMode && styles.sortToggleTextDark,
+              (dateFilter !== 'closest') && styles.sortToggleTextActive
+            ]}>
+              {showSort ? "Fermer" : "Tri"}
+            </Text>
+            {(dateFilter !== 'closest') && (
+              <View style={styles.sortIndicator}>
+                <Text style={styles.sortIndicatorText}>•</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {/* Bouton Clear visible seulement si des filtres sont appliqués */}
+          {(statusFilter !== 'all' || dateFilter !== 'closest') && (
+            <TouchableOpacity 
+              onPress={() => {
+                setStatusFilter('all');
+                setDateFilter('closest');
+                setShowFilters(false);
+                setShowSort(false);
+              }}
+              style={[styles.clearButton, isDarkMode && styles.clearButtonDark]}
+            >
+              <Ionicons 
+                name="refresh" 
+                size={18} 
+                color={isDarkMode ? "#EF4444" : "#EF4444"} 
+              />
+              <Text style={[styles.clearButtonText, isDarkMode && styles.clearButtonTextDark]}>
+                Clear
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Section des filtres par statut */}
-      <View style={[styles.filtersSection, isDarkMode && styles.filtersSectionDark]}>
-        <View style={styles.filtersHeader}>
-          <Ionicons 
-            name="filter-outline" 
-            size={18} 
-            color={isDarkMode ? "#60A5FA" : "#3498db"} 
-          />
-          <Text style={[styles.filtersTitle, isDarkMode && styles.filtersTitleDark]}>
-            Filtrer par statut
-          </Text>
-        </View>
-        <FlatList
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          data={statusOptions}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => {
-            const count = getStatusCount(item.id, activeTab === 'upcoming');
-            return (
-              <TouchableOpacity
-                style={[
-                  styles.statusFilterButton,
-                  isDarkMode && styles.statusFilterButtonDark,
-                  statusFilter === item.id && styles.statusFilterButtonActive,
-                  statusFilter === item.id && { borderColor: item.color }
-                ]}
-                onPress={() => setStatusFilter(item.id)}
-              >
-                <Ionicons 
-                  name={item.icon} 
-                  size={16} 
-                  color={statusFilter === item.id ? item.color : (isDarkMode ? '#9CA3AF' : '#666')} 
-                />
-                <Text 
-                  style={[
-                    styles.statusFilterText,
-                    isDarkMode && styles.statusFilterTextDark,
-                    statusFilter === item.id && { color: item.color, fontWeight: '600' }
-                  ]}
-                >
-                  {item.label}
-                </Text>
-                {count > 0 && (
-                  <View style={[styles.statusBadge, { backgroundColor: item.color }]}>
-                    <Text style={styles.statusBadgeText}>{count}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          }}
-          contentContainerStyle={styles.statusFiltersList}
-        />
-      </View>
+      {showFilters && (
+        <Animated.View 
+          style={[
+            styles.filtersSection, 
+            isDarkMode && styles.filtersSectionDark,
+            {
+              opacity: filtersAnimationValue,
+              maxHeight: filtersAnimationValue.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 300], // Hauteur réduite sans le tri
+              }),
+            }
+          ]}
+        >
+          <View style={styles.filtersHeader}>
+            <Ionicons 
+              name="filter-outline" 
+              size={18} 
+              color={isDarkMode ? "#60A5FA" : "#3498db"} 
+            />
+            <Text style={[styles.filtersTitle, isDarkMode && styles.filtersTitleDark]}>
+              Filtres
+            </Text>
+          </View>
+          
+          {/* Filtre par statut */}
+          <View style={styles.filterSection}>
+            <Text style={[styles.filterLabel, isDarkMode && styles.filterLabelDark]}>
+              Par statut
+            </Text>
+            <FlatList
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={statusOptions}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => {
+                const count = getStatusCount(item.id, activeTab === 'upcoming');
+                return (
+                  <TouchableOpacity
+                    style={[
+                      styles.statusFilterButton,
+                      isDarkMode && styles.statusFilterButtonDark,
+                      statusFilter === item.id && styles.statusFilterButtonActive,
+                      statusFilter === item.id && { borderColor: item.color }
+                    ]}
+                    onPress={() => setStatusFilter(item.id)}
+                  >
+                    <Ionicons 
+                      name={item.icon} 
+                      size={16} 
+                      color={statusFilter === item.id ? item.color : (isDarkMode ? '#9CA3AF' : '#666')} 
+                    />
+                    <Text 
+                      style={[
+                        styles.statusFilterText,
+                        isDarkMode && styles.statusFilterTextDark,
+                        statusFilter === item.id && { color: item.color, fontWeight: '600' }
+                      ]}
+                    >
+                      {item.label}
+                    </Text>
+                    {count > 0 && (
+                      <View style={[styles.statusBadge, { backgroundColor: item.color }]}>
+                        <Text style={styles.statusBadgeText}>{count}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              }}
+              contentContainerStyle={styles.statusFiltersList}
+            />
+          </View>
+        </Animated.View>
+      )}
 
-      <View style={styles.listContainer}>
+      {/* Section de tri */}
+      {showSort && (
+        <Animated.View 
+          style={[
+            styles.sortSection, 
+            isDarkMode && styles.sortSectionDark,
+            {
+              opacity: sortAnimationValue,
+              maxHeight: sortAnimationValue.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 150], // Hauteur pour le tri uniquement
+              }),
+            }
+          ]}
+        >
+          <View style={styles.sortHeader}>
+            <Ionicons 
+              name="swap-vertical-outline" 
+              size={18} 
+              color={isDarkMode ? "#60A5FA" : "#3498db"} 
+            />
+            <Text style={[styles.sortTitle, isDarkMode && styles.sortTitleDark]}>
+              Tri par date
+            </Text>
+          </View>
+          
+          <View style={styles.dateFilterContainer}>
+            <TouchableOpacity
+              style={[
+                styles.dateFilterButton,
+                isDarkMode && styles.dateFilterButtonDark,
+                dateFilter === 'closest' && styles.dateFilterButtonActive
+              ]}
+              onPress={() => setDateFilter('closest')}
+            >
+              <Ionicons 
+                name="arrow-up-circle-outline" 
+                size={16} 
+                color={dateFilter === 'closest' ? '#10B981' : (isDarkMode ? '#9CA3AF' : '#666')} 
+              />
+              <Text 
+                style={[
+                  styles.dateFilterText,
+                  isDarkMode && styles.dateFilterTextDark,
+                  dateFilter === 'closest' && { color: '#10B981', fontWeight: '600' }
+                ]}
+              >
+                Du plus proche
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[
+                styles.dateFilterButton,
+                isDarkMode && styles.dateFilterButtonDark,
+                dateFilter === 'farthest' && styles.dateFilterButtonActive
+              ]}
+              onPress={() => setDateFilter('farthest')}
+            >
+              <Ionicons 
+                name="arrow-down-circle-outline" 
+                size={16} 
+                color={dateFilter === 'farthest' ? '#F59E0B' : (isDarkMode ? '#9CA3AF' : '#666')} 
+              />
+              <Text 
+                style={[
+                  styles.dateFilterText,
+                  isDarkMode && styles.dateFilterTextDark,
+                  dateFilter === 'farthest' && { color: '#F59E0B', fontWeight: '600' }
+                ]}
+              >
+                Du plus loin
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      )}
+
+      <ScrollView 
+        style={styles.listContainer}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ flexGrow: 1 }}
+      >
         {activeTab === 'upcoming' ? (
           <AppointmentList
             appointments={upcomingAppointments}
@@ -277,7 +578,7 @@ const AppointmentsScreen: React.FC = () => {
             onCancelAppointment={handleDeleteAppointment}
           />
         )}
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -309,28 +610,37 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   tabContainer: {
-    flexDirection: 'row',
     backgroundColor: '#fff',
     paddingHorizontal: 16,
+    paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
   },
-  tab: {
-    paddingVertical: 12,
-    marginRight: 16,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+  tabWrapper: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
   },
-  activeTab: {
-    borderBottomColor: '#3498db',
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  tabIcon: {
+    marginRight: 6,
   },
   tabText: {
     fontSize: 16,
-    color: '#666',
+    fontWeight: '500',
+    color: '#6B7280',
   },
   activeTabText: {
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: '#3498db',
+    fontSize: 16,
   },
   listContainer: {
     flex: 1,
@@ -349,14 +659,14 @@ const styles = StyleSheet.create({
     color: '#9CA3AF', // gray-400
   },
   tabContainerDark: {
-    backgroundColor: '#1F2937', // gray-800
-    borderBottomColor: '#374151', // gray-700
+    backgroundColor: '#1F2937',
+    borderBottomColor: '#374151',
   },
   tabDark: {
-    borderBottomColor: 'transparent',
+    backgroundColor: 'transparent',
   },
-  tabTextDark: {
-    color: '#9CA3AF', // gray-400
+  activeTabDark: {
+    // Style pour l'onglet actif en mode sombre si nécessaire
   },
   // Styles pour les filtres de statut
   filtersSection: {
@@ -430,6 +740,197 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 11,
     fontWeight: '600',
+  },
+  // Nouveaux styles pour les filtres améliorés
+  filterSection: {
+    marginBottom: 16,
+  },
+  filterLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  filterLabelDark: {
+    color: '#9CA3AF',
+  },
+  dateFilterContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  dateFilterButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+  },
+  dateFilterButtonDark: {
+    backgroundColor: '#374151',
+    borderColor: '#4b5563',
+  },
+  dateFilterButtonActive: {
+    borderWidth: 2,
+    backgroundColor: '#f0f9ff',
+  },
+  dateFilterText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#6b7280',
+    marginLeft: 6,
+  },
+  dateFilterTextDark: {
+    color: '#9CA3AF',
+  },
+  // Styles pour le bouton de filtres
+  filterToggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#f0f9ff',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+    alignSelf: 'flex-start',
+  },
+  filterToggleButtonDark: {
+    backgroundColor: '#1e293b',
+    borderColor: '#374151',
+  },
+  filterToggleText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#3498db',
+    marginLeft: 6,
+  },
+  filterToggleTextDark: {
+    color: '#60A5FA',
+  },
+  // Styles pour les boutons d'actions
+  actionButtonsContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 0,
+    justifyContent: 'flex-start',
+  },
+  actionButtonsContainerRight: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 0,
+    justifyContent: 'flex-end',
+  },
+  sortToggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#f0f9ff',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+    alignSelf: 'flex-start',
+  },
+  sortToggleButtonDark: {
+    backgroundColor: '#1e293b',
+    borderColor: '#374151',
+  },
+  sortToggleText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#3498db',
+    marginLeft: 6,
+  },
+  sortToggleTextDark: {
+    color: '#60A5FA',
+  },
+  // Styles pour la section de tri
+  sortSection: {
+    backgroundColor: '#f8f9fa',
+    padding: 16,
+    marginBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e1e5e9',
+  },
+  sortSectionDark: {
+    backgroundColor: '#1e293b',
+    borderBottomColor: '#374151',
+  },
+  sortHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sortTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginLeft: 8,
+  },
+  sortTitleDark: {
+    color: '#9CA3AF',
+  },
+  // Styles pour les états actifs et indicateurs
+  filterToggleButtonActive: {
+    backgroundColor: '#3498db',
+    borderColor: '#3498db',
+  },
+  filterToggleTextActive: {
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  sortToggleButtonActive: {
+    backgroundColor: '#3498db',
+    borderColor: '#3498db',
+  },
+  sortToggleTextActive: {
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  filterIndicator: {
+    marginLeft: 4,
+  },
+  filterIndicatorText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  sortIndicator: {
+    marginLeft: 4,
+  },
+  sortIndicatorText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  // Styles pour le bouton Clear
+  clearButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#fee2e2',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
+  clearButtonDark: {
+    backgroundColor: '#450a0a',
+    borderColor: '#7f1d1d',
+  },
+  clearButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#EF4444',
+    marginLeft: 4,
+  },
+  clearButtonTextDark: {
+    color: '#EF4444',
   },
 });
 

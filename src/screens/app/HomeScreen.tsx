@@ -1,5 +1,5 @@
 import React, { useContext, useState, useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, FlatList, Image, Animated, Dimensions, Modal } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, FlatList, Image, Animated, Dimensions, Modal, Alert } from 'react-native';
 import { Card, Title, Paragraph, Button, IconButton } from 'react-native-paper';
 import { AuthContext } from '../../contexts/AuthContext';
 import { ThemeContext } from '../../contexts/ThemeContext';
@@ -10,8 +10,9 @@ import { Appointment, Service, Notification, CreateAppointmentRequest } from '..
 import { AppointmentList } from '../../components/appointments/AppointmentList';
 import { Ionicons } from '@expo/vector-icons';
 import { API_URL } from '../../config/api';
+import { useFocusEffect } from '@react-navigation/native';
 
-const HomeScreen = ({ navigation }: any) => {
+const HomeScreen = ({ navigation, route }: any) => {
   const { user, token } = useContext(AuthContext);
   const { theme, toggleTheme, isDarkMode } = useContext(ThemeContext);
   // Animation pour le changement de mode (dark/light)
@@ -108,13 +109,44 @@ const HomeScreen = ({ navigation }: any) => {
     }
   }, [viewMode]);
 
+  // Fonction pour recharger les rendez-vous
+  const reloadAppointments = async () => {
+    if (user && token) {
+      setIsLoading(true);
+      try {
+        const data = await getUserAppointments(token);
+        
+        // Adapter les données pour inclure le champ time s'il existe
+        const adaptedData = data.map((apt: any) => ({
+          ...apt,
+          // S'assurer que le champ time est préservé
+          time: apt.time || apt.appointmentTime || null,
+          service: apt.service || {
+            id: apt.serviceId?.toString() ?? '',
+            name: apt.serviceName ?? '',
+            price: Number(apt.price) ?? 0,
+            duration: apt.duration ?? 0,
+            description: '',
+            category: '',
+            imageUrl: '',
+          },
+        }));
+        
+        setAppointments(adaptedData);
+      } catch (e) {
+        setAppointments([]);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
   React.useEffect(() => {
     const fetchAppointments = async () => {
       if (user && token) {
         setIsLoading(true);
         try {
           const data = await getUserAppointments(token);
-          console.log('📅 Données rendez-vous reçues dans HomeScreen:', data.slice(0, 1)); // Debug
           
           // Adapter les données pour inclure le champ time s'il existe
           const adaptedData = data.map((apt: any) => ({
@@ -145,8 +177,6 @@ const HomeScreen = ({ navigation }: any) => {
       if (user && token) {
         try {
           const data = await getAllServices(token);
-          console.log('Services récupérés:', data); // Debug: voir la structure des données
-          console.log('Premier service:', data[0]); // Debug: voir le premier service
           setServices(data);
         } catch (e) {
           console.error('Erreur lors de la récupération des services:', e);
@@ -169,6 +199,27 @@ const HomeScreen = ({ navigation }: any) => {
     fetchServices();
     fetchNotifications();
   }, [user, token]);
+
+  // Écouter les paramètres de navigation pour recharger automatiquement
+  React.useEffect(() => {
+    if (route?.params?.refresh && route?.params?.timestamp) {
+      
+      // Recharger les rendez-vous automatiquement
+      reloadAppointments();
+      
+      // Nettoyer les paramètres pour éviter les rechargements multiples
+      navigation.setParams({ refresh: undefined, timestamp: undefined });
+    }
+  }, [route?.params?.refresh, route?.params?.timestamp]);
+
+  // Recharger automatiquement quand l'écran devient actif (au cas où)
+  useFocusEffect(
+    React.useCallback(() => {
+      if (route?.params?.refresh) {
+        reloadAppointments();
+      }
+    }, [route?.params?.refresh])
+  );
   
   // Mettre à jour la semaine actuelle lorsqu'on change la date sélectionnée
   React.useEffect(() => {
@@ -281,7 +332,10 @@ const HomeScreen = ({ navigation }: any) => {
   const getDayAppointmentStatus = (date: Date) => {
     const dayAppointments = appointments.filter(a => {
       const appDate = new Date(a.date);
-      return appDate.toDateString() === date.toDateString();
+      const dateString = date.toDateString();
+      const appDateString = appDate.toDateString();
+      
+      return appDateString === dateString;
     });
     
     if (dayAppointments.length === 0) return null;
@@ -342,11 +396,8 @@ const HomeScreen = ({ navigation }: any) => {
     if (service.image && service.image !== 'null' && service.image !== '') {
       // Utiliser la route API spécifique pour récupérer l'image par ID de service
       const imageUrl = `${API_URL}/services/${service.id}/image`;
-      console.log('🖼️ URL d\'image construite:', imageUrl);
-      console.log('📋 Service complet:', JSON.stringify(service, null, 2));
       return imageUrl;
     }
-    console.log('❌ Pas d\'image valide pour:', service.name, 'image value:', service.image);
     return null;
   };
 
@@ -357,12 +408,9 @@ const HomeScreen = ({ navigation }: any) => {
     // Services récemment ajoutés (simulé - dans une vraie app, les services auraient une date de création)
     const recentServices = services.slice(0, 2);
     recentServices.forEach((service, index) => {
-      console.log(`Service ${index}:`, service); // Debug: voir chaque service
-      console.log(`Image du service ${service.name}:`, service.image); // Debug: voir l'image
       
       // Construire l'URL complète de l'image
       const imageUrl = getServiceImageUrl(service);
-      console.log(`URL construite pour ${service.name}:`, imageUrl); // Debug: voir l'URL construite
       
       activities.push({
         id: `service-${service.id}`,
@@ -570,11 +618,30 @@ const HomeScreen = ({ navigation }: any) => {
       setShowBookingModal(false);
       setSelectedService(null);
       
-      // Rafraîchir les rendez-vous
-      const updatedAppointments = await getUserAppointments(token);
-      setAppointments(updatedAppointments);
+      // Rafraîchir les rendez-vous en utilisant la fonction complète d'adaptation
+      await reloadAppointments();
       
       console.log('✅ Rendez-vous créé avec succès');
+      
+      // Pop-up de confirmation de succès avec options
+      Alert.alert(
+        '✅ Rendez-vous créé !',
+        `Votre rendez-vous pour "${selectedService?.name || 'le service sélectionné'}" a été correctement créé et confirmé.`,
+        [
+          {
+            text: 'Voir mes rendez-vous',
+            style: 'default',
+            onPress: () => {
+              // Rediriger vers la page Rendez-vous
+              navigation.navigate('AppointmentsTab');
+            }
+          },
+          {
+            text: 'OK',
+            style: 'cancel'
+          }
+        ]
+      );
     } catch (error) {
       console.error('❌ Erreur lors de la création du rendez-vous:', error);
     }
@@ -963,12 +1030,10 @@ const HomeScreen = ({ navigation }: any) => {
                     source={{ uri: activity.imageUrl }} 
                     style={styles.activityImage}
                     onError={(error) => {
-                      console.log('❌ Erreur image URL:', activity.imageUrl);
-                      console.log('❌ Erreur détails:', JSON.stringify(error.nativeEvent, null, 2));
-                      console.log('❌ Service:', activity.serviceData?.name);
+                      // Image failed to load, fallback will be shown
                     }}
                     onLoad={() => {
-                      console.log('✅ Image chargée:', activity.imageUrl);
+                      // Image loaded successfully
                     }}
                   />
                 ) : (

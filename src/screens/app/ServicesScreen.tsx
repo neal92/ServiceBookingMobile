@@ -8,9 +8,10 @@ import { getAllServices, getAllCategories } from '../../api/services';
 import { createAppointment, getAvailableTimeSlots, checkTimeSlotAvailability, getUserAppointments } from '../../api/appointments';
 import { Loading } from '../../components/common/Loading';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { testAndShowAPIConnection } from '../../utils/networkUtils';
 import { API_URL } from '../../config/api';
+import PrestationDetailCard from '../../components/prestations/PrestationDetailCard';
 
 const ServicesScreen: React.FC = () => {
   // --- Hooks et fonctions calendrier HomeScreen ---
@@ -104,6 +105,15 @@ const ServicesScreen: React.FC = () => {
   const [search, setSearch] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   
+  // États pour les filtres collapsibles
+  const [showFilters, setShowFilters] = useState(false);
+  const [showSort, setShowSort] = useState(false);
+  const [sortOrder, setSortOrder] = useState<'price-asc' | 'price-desc' | 'duration-asc' | 'duration-desc' | 'name-asc' | 'name-desc'>('name-asc');
+  
+  // Animations pour les filtres
+  const filtersAnimationValue = useRef(new Animated.Value(0)).current;
+  const sortAnimationValue = useRef(new Animated.Value(0)).current;
+  
   // États pour le modal de réservation
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
@@ -114,8 +124,12 @@ const ServicesScreen: React.FC = () => {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [clientNotes, setClientNotes] = useState('');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  
+  // État pour la carte de détail de prestation
+  const [showPrestationDetail, setShowPrestationDetail] = useState(false);
+  const [selectedPrestation, setSelectedPrestation] = useState<Service | null>(null);
 
-  // Animation pour la section horaire
+  // Animations pour les filtres
   const timeSectionOpacity = useRef(new Animated.Value(0)).current;
   const timeSectionScale = useRef(new Animated.Value(0.9)).current;
   const selectedTimeAnimation = useRef(new Animated.Value(1)).current;
@@ -125,56 +139,28 @@ const ServicesScreen: React.FC = () => {
     if (!user || !token) return;
     
     try {
-      console.log('🔄 Chargement des rendez-vous...');
       const data = await getUserAppointments(token);
-      
-      console.log('📦 Données brutes reçues de l\'API:');
-      console.log(JSON.stringify(data, null, 2));
       
       // Analyser chaque rendez-vous individuellement
       if (Array.isArray(data)) {
-        console.log(`📊 ${data.length} rendez-vous reçus de l'API`);
-        
-        data.forEach((appointment, index) => {
-          console.log(`\n--- Rendez-vous ${index + 1} ---`);
-          console.log('📅 ID:', appointment?.id);
-          console.log('📅 Date:', appointment?.date);
-          console.log('📅 Status:', appointment?.status);
-          console.log('🔧 Service (type):', typeof appointment?.service);
-          console.log('🔧 Service (contenu):', appointment?.service);
-          
-          if (appointment?.service) {
-            console.log('  📋 Service ID:', appointment.service.id);
-            console.log('  📋 Service name:', appointment.service.name);
-            console.log('  📋 Service complet:', JSON.stringify(appointment.service, null, 2));
-          } else {
-            console.warn('⚠️ Aucun service trouvé pour ce rendez-vous');
-          }
-        });
         
         // Filtrer les rendez-vous invalides
         const validAppointments = data.filter((appointment, index) => {
           if (!appointment) {
-            console.warn(`❌ Rendez-vous ${index} est null`);
             return false;
           }
           if (!appointment.service) {
-            console.warn(`❌ Rendez-vous ${index} sans service:`, appointment);
             return false;
           }
           if (!appointment.service?.name) {
-            console.warn(`❌ Service ${index} sans nom. Service:`, appointment.service);
             return false;
           }
           
-          console.log(`✅ Rendez-vous ${index} valide`);
           return true;
         });
         
-        console.log(`✅ ${validAppointments.length} rendez-vous valides sur ${data.length}`);
         setAppointments(validAppointments);
       } else {
-        console.warn('❌ Les données reçues ne sont pas un tableau:', typeof data, data);
         setAppointments([]);
       }
     } catch (error) {
@@ -207,18 +193,12 @@ const ServicesScreen: React.FC = () => {
 
   // Fonction pour charger les créneaux disponibles
   const loadAvailableSlots = async (date: Date) => {
-    console.log('🔄 loadAvailableSlots appelée');
-    console.log('📅 Date:', date);
-    console.log('🔧 selectedService:', selectedService);
-    
     if (!selectedService) {
-      console.log('❌ Pas de service sélectionné, arrêt');
       return;
     }
 
-    // Pour les services de moins d'1h : créneaux de 30min
+    // Pour les prestations de moins d'1h : créneaux de 30min
     const timeSlots = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30'];
-    console.log('⏰ Service courte durée (<60min) - créneaux de 30min:', timeSlots);
     
     const formattedSlots = timeSlots.map(time => ({ 
       time, 
@@ -226,19 +206,12 @@ const ServicesScreen: React.FC = () => {
       period: parseInt(time.split(':')[0]) < 12 ? 'morning' : 'afternoon' 
     }));
     
-    console.log('✅ Créneaux générés:', formattedSlots);
     return formattedSlots;
   };
 
   // Effet pour charger les créneaux quand la date ou le service change
   useEffect(() => {
-    console.log('🔄 useEffect créneaux déclenché');
-    console.log('🔧 selectedService:', selectedService?.name);
-    console.log('📅 selectedDate:', selectedDate);
-    console.log('🎭 showBookingModal:', showBookingModal);
-    
     if (selectedService && showBookingModal) {
-      console.log('✅ Conditions remplies - Chargement des créneaux...');
       loadAvailableSlots(selectedDate);
       
       // Animation d'entrée pour la section horaire
@@ -256,7 +229,6 @@ const ServicesScreen: React.FC = () => {
         })
       ]).start();
     } else {
-      console.log('❌ Conditions non remplies pour charger les créneaux');
       // Réinitialiser l'animation
       timeSectionOpacity.setValue(0);
       timeSectionScale.setValue(0.9);
@@ -265,8 +237,6 @@ const ServicesScreen: React.FC = () => {
 
   useEffect(() => {
     if (user && token) {
-      // Afficher l'URL de l'API utilisée pour le débogage
-      console.log('URL API utilisée dans ServicesScreen:', API_URL);
       loadServices();
       loadCategories();
       loadAppointments();
@@ -281,18 +251,16 @@ const ServicesScreen: React.FC = () => {
   const loadServices = async () => {
     try {
       setIsLoading(true);
-      console.log('Chargement des services avec token:', token ? 'Présent' : 'Non présent');
       const response = await getAllServices(token || undefined);
-      console.log('Services chargés avec succès, nombre:', response.length);
       setServices(response);
     } catch (error: any) {
-      console.error('Erreur lors du chargement des services:', error);
+      console.error('Erreur lors du chargement des prestations:', error);
       // Si l'erreur est due à un timeout, proposer de tester la connexion
       const errorMsg = error?.message || '';
       if (errorMsg.includes('timeout') || errorMsg.includes('trop de temps')) {
         Alert.alert(
           'Erreur de connexion',
-          'Impossible de charger les services. Voulez-vous tester la connexion au serveur?',
+          'Impossible de charger les prestations. Voulez-vous tester la connexion au serveur?',
           [
             { text: 'Annuler', style: 'cancel' },
             { text: 'Tester', onPress: testConnection }
@@ -314,18 +282,31 @@ const ServicesScreen: React.FC = () => {
     }
   };
 
-  // Fonction pour gérer la réservation d'un service
+  // Fonction pour gérer la réservation d'une prestation
   const handleBookService = (service: Service) => {
-    console.log('Réservation du service:', service.name);
     setSelectedService(service);
     setShowCalendarModal(true); // Ouvrir d'abord le calendrier
   };
 
+  // Fonction pour afficher les détails d'une prestation
+  const handlePrestationDetail = (prestation: Service) => {
+    // Enrichir la prestation avec le nom de la catégorie
+    const enrichedPrestation = {
+      ...prestation,
+      category: getCategoryName((prestation as ServiceWithCategoryId).categoryId)
+    };
+    setSelectedPrestation(enrichedPrestation);
+    setShowPrestationDetail(true);
+  };
+
+  // Fonction pour réserver depuis la carte de détail
+  const handleBookFromDetail = (prestation: Service) => {
+    setShowPrestationDetail(false);
+    handleBookService(prestation);
+  };
+
   // Fonction pour gérer la sélection de date dans le calendrier
   const handleDateSelect = (date: Date) => {
-    console.log('📅 Date sélectionnée:', date);
-    console.log('🔧 Service actuel:', selectedService);
-    
     setSelectedDate(date);
     setShowCalendarModal(false); // Fermer le calendrier
     setShowBookingModal(true); // Ouvrir le modal de sélection d'heure
@@ -380,6 +361,41 @@ const ServicesScreen: React.FC = () => {
     setSelectedDate(newDate);
   };
 
+  // Fonctions pour gérer les filtres collapsibles
+  const toggleFilters = () => {
+    const toValue = showFilters ? 0 : 1;
+    
+    Animated.timing(filtersAnimationValue, {
+      toValue,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+    
+    setShowFilters(!showFilters);
+  };
+
+  const toggleSort = () => {
+    const toValue = showSort ? 0 : 1;
+    
+    Animated.timing(sortAnimationValue, {
+      toValue,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+    
+    setShowSort(!showSort);
+  };
+
+  // Options de tri disponibles
+  const sortOptions = [
+    { id: 'name-asc', label: 'Nom (A-Z)', icon: 'text-outline' as const },
+    { id: 'name-desc', label: 'Nom (Z-A)', icon: 'text-outline' as const },
+    { id: 'price-asc', label: 'Prix croissant', icon: 'arrow-up-outline' as const },
+    { id: 'price-desc', label: 'Prix décroissant', icon: 'arrow-down-outline' as const },
+    { id: 'duration-asc', label: 'Durée croissante', icon: 'time-outline' as const },
+    { id: 'duration-desc', label: 'Durée décroissante', icon: 'time-outline' as const },
+  ];
+
   // Fonction pour confirmer et créer la réservation
   const confirmBooking = async () => {
     if (!selectedService || !user || !token) {
@@ -390,7 +406,7 @@ const ServicesScreen: React.FC = () => {
     // Pop-up de validation AVANT la réservation
     Alert.alert(
       'Confirmer la réservation',
-      `Voulez-vous vraiment réserver le service "${selectedService.name || 'le service sélectionné'}" le ${selectedDate.toLocaleDateString('fr-FR')} à ${selectedTime} ?`,
+      `Voulez-vous vraiment réserver la prestation "${selectedService.name || 'la prestation sélectionnée'}" le ${selectedDate.toLocaleDateString('fr-FR')} à ${selectedTime} ?`,
       [
         {
           text: 'Annuler',
@@ -439,20 +455,37 @@ const ServicesScreen: React.FC = () => {
               });
               const newAppointment = await createAppointment(appointmentData, token);
 
-              // Pop-up de validation APRÈS la réservation
+              // Pop-up de validation APRÈS la réservation avec options
               Alert.alert(
                 'Réservation confirmée !',
-                `Votre rendez-vous pour "${selectedService.name || 'le service sélectionné'}" a été réservé pour le ${selectedDate.toLocaleDateString('fr-FR')} à ${selectedTime}`,
+                `Votre rendez-vous pour "${selectedService.name || 'la prestation sélectionnée'}" a été réservé pour le ${selectedDate.toLocaleDateString('fr-FR')} à ${selectedTime}`,
                 [
                   {
-                    text: 'OK',
+                    text: 'Voir mes rendez-vous',
+                    style: 'default',
                     onPress: () => {
                       setShowBookingModal(false);
                       setSelectedService(null);
                       setClientNotes(''); // Réinitialiser les notes
                       loadAppointments(); // Recharger les rendez-vous pour mettre à jour le calendrier
-                      // Optionnel: naviguer vers l'écran des rendez-vous
-                      // navigation.navigate('AppointmentsTab');
+                      // Naviguer vers l'écran des rendez-vous
+                      (navigation as any).navigate('AppointmentsTab');
+                    }
+                  },
+                  {
+                    text: 'OK',
+                    style: 'cancel',
+                    onPress: () => {
+                      setShowBookingModal(false);
+                      setSelectedService(null);
+                      setClientNotes(''); // Réinitialiser les notes
+                      loadAppointments(); // Recharger les rendez-vous pour mettre à jour le calendrier
+                      
+                      // Notifier la page d'accueil qu'elle doit se rafraîchir
+                      (navigation as any).navigate('HomeTab', { 
+                        refresh: true, 
+                        timestamp: Date.now() 
+                      });
                     }
                   }
                 ]
@@ -474,12 +507,7 @@ const ServicesScreen: React.FC = () => {
 
   // Debug temporaire pour voir les valeurs de service.category et des catégories
   useEffect(() => {
-    if (services.length > 0) {
-      console.log('DEBUG services:', services.map(s => ({ id: s.id, name: s.name, category: s.category })));
-    }
-    if (categories.length > 0) {
-      console.log('DEBUG categories:', categories);
-    }
+    // Debug logs removed for performance
   }, [services, categories]);
 
   if (!user) {
@@ -496,7 +524,7 @@ const ServicesScreen: React.FC = () => {
           <Card.Content>
             <Title style={[{ color: '#333' }, isDarkMode && styles.serviceNameDark]}>OUPS !</Title>
             <Paragraph style={[{ color: '#333' }, isDarkMode && styles.serviceDescriptionDark]}>
-              Veuillez vous connecter pour voir les services disponibles.
+              Veuillez vous connecter pour voir les prestations disponibles.
             </Paragraph>
           </Card.Content>
           <Card.Actions>
@@ -521,10 +549,8 @@ const ServicesScreen: React.FC = () => {
     if (service.image && service.image !== 'null' && service.image !== '') {
       // Utiliser la route API spécifique pour récupérer l'image par ID de service
       const imageUrl = `${API_URL}/services/${service.id}/image`;
-      console.log('🖼️ ServicesScreen - URL d\'image construite:', imageUrl);
       return imageUrl;
     }
-    console.log('❌ ServicesScreen - Pas d\'image valide pour:', service.name, 'image value:', service.image);
     return null;
   };
   
@@ -538,6 +564,26 @@ const ServicesScreen: React.FC = () => {
     // Filtre par recherche
     if (showSearch && search && !service.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
+  });
+
+  // Fonction pour trier les services
+  const sortedServices = [...filteredServices].sort((a, b) => {
+    switch (sortOrder) {
+      case 'name-asc':
+        return (a.name || '').localeCompare(b.name || '');
+      case 'name-desc':
+        return (b.name || '').localeCompare(a.name || '');
+      case 'price-asc':
+        return (a.price || 0) - (b.price || 0);
+      case 'price-desc':
+        return (b.price || 0) - (a.price || 0);
+      case 'duration-asc':
+        return (a.duration || 0) - (b.duration || 0);
+      case 'duration-desc':
+        return (b.duration || 0) - (a.duration || 0);
+      default:
+        return 0;
+    }
   });
 
   // Trouver le nom de la catégorie à partir de l'id
@@ -579,7 +625,7 @@ const ServicesScreen: React.FC = () => {
       <View style={[styles.header, isDarkMode && styles.headerDark]}>
         <View style={styles.titleSection}>
           <Text style={[styles.title, isDarkMode && styles.titleDark]}>ServiceBooking</Text>
-          <Text style={[styles.subtitle, isDarkMode && styles.subtitleDark]}>Simplifiez votre gestion de rendez-vous</Text>
+          <Text style={[styles.subtitle, isDarkMode && styles.subtitleDark]}>Découvrez nos prestations et réservez</Text>
         </View>
         <View style={{ flexDirection: 'row' }}>
           <TouchableOpacity onPress={testConnection} style={{ marginRight: 15 }}>
@@ -601,113 +647,319 @@ const ServicesScreen: React.FC = () => {
           autoFocus
         />
       )}
-      <View style={[styles.filtersSection, isDarkMode && styles.filtersSectionDark]}>
-        <View style={styles.filtersHeader}>
-          <Ionicons 
-            name="filter" 
-            size={18} 
-            color={isDarkMode ? "#60A5FA" : "#3498db"} 
-            style={styles.filtersIcon}
-          />
-          <Text style={[styles.filtersTitle, isDarkMode && styles.filtersTitleDark]}>
-            Filtres
-          </Text>
+      
+      {/* Saut de ligne avant les filtres */}
+      <View style={{ height: 10 }} />
+      
+      {/* Compteur de services - au-dessus des filtres */}
+      <View style={{ 
+        paddingHorizontal: 16, 
+        paddingVertical: 8,
+        backgroundColor: isDarkMode ? '#111827' : '#f8f9fa'
+      }}>
+        <Text style={[styles.servicesCount, isDarkMode && styles.servicesCountDark, { fontSize: 18, fontWeight: '700' }]}>
+          {sortedServices.length} service{sortedServices.length > 1 ? 's' : ''} disponible{sortedServices.length > 1 ? 's' : ''}
+        </Text>
+      </View>
+      
+      {/* Section des boutons de filtres et tri */}
+      <View style={[
+        styles.tabContainer, 
+        isDarkMode && styles.tabContainerDark,
+        { backgroundColor: isDarkMode ? '#111827' : '#f8f9fa' }
+      ]}>
+        <View style={styles.tabWrapper}>
         </View>
-        <View style={[styles.categoryContainer, isDarkMode && styles.categoryContainerDark]}>
-          <FlatList
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            data={categories}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[
-                  styles.categoryButton,
-                  isDarkMode && styles.categoryButtonDark,
-                  selectedCategory === item.id && styles.selectedCategory
-                ]}
-                onPress={() => setSelectedCategory(item.id)}
-              >
-                <Text 
-                  style={[
-                    styles.categoryText,
-                    isDarkMode && styles.categoryTextDark,
-                    selectedCategory === item.id && styles.selectedCategoryText
-                  ]}
-                >
-                  {item.name || 'Catégorie'}
-                </Text>
-              </TouchableOpacity>
+        
+        {/* Boutons de filtres et tri - alignés à droite */}
+        <View style={styles.actionButtonsContainerRight}>
+          <TouchableOpacity 
+            onPress={toggleFilters}
+            style={[
+              styles.filterToggleButton, 
+              isDarkMode && styles.filterToggleButtonDark,
+              (selectedCategory && selectedCategory !== 'all') && styles.filterToggleButtonActive
+            ]}
+          >
+            <Ionicons 
+              name={showFilters ? "close" : "filter"} 
+              size={20} 
+              color={
+                (selectedCategory && selectedCategory !== 'all') 
+                  ? "#fff" 
+                  : (isDarkMode ? "#60A5FA" : "#3498db")
+              } 
+            />
+            <Text style={[
+              styles.filterToggleText, 
+              isDarkMode && styles.filterToggleTextDark,
+              (selectedCategory && selectedCategory !== 'all') && styles.filterToggleTextActive
+            ]}>
+              {showFilters ? "Fermer" : "Filtres"}
+            </Text>
+            {(selectedCategory && selectedCategory !== 'all') && (
+              <View style={styles.filterIndicator}>
+                <Text style={styles.filterIndicatorText}>•</Text>
+              </View>
             )}
-            contentContainerStyle={styles.categoryList}
-          />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            onPress={toggleSort}
+            style={[
+              styles.sortToggleButton, 
+              isDarkMode && styles.sortToggleButtonDark,
+              (sortOrder !== 'name-asc') && styles.sortToggleButtonActive
+            ]}
+          >
+            <Ionicons 
+              name={showSort ? "close" : "swap-vertical"} 
+              size={20} 
+              color={
+                (sortOrder !== 'name-asc') 
+                  ? "#fff" 
+                  : (isDarkMode ? "#60A5FA" : "#3498db")
+              } 
+            />
+            <Text style={[
+              styles.sortToggleText, 
+              isDarkMode && styles.sortToggleTextDark,
+              (sortOrder !== 'name-asc') && styles.sortToggleTextActive
+            ]}>
+              {showSort ? "Fermer" : "Tri"}
+            </Text>
+            {(sortOrder !== 'name-asc') && (
+              <View style={styles.sortIndicator}>
+                <Text style={styles.sortIndicatorText}>•</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {/* Bouton Clear visible seulement si des filtres sont appliqués */}
+          {((selectedCategory && selectedCategory !== 'all') || sortOrder !== 'name-asc') && (
+            <TouchableOpacity 
+              onPress={() => {
+                setSelectedCategory('all');
+                setSortOrder('name-asc');
+                setShowFilters(false);
+                setShowSort(false);
+              }}
+              style={[styles.clearButton, isDarkMode && styles.clearButtonDark]}
+            >
+              <Ionicons 
+                name="refresh" 
+                size={18} 
+                color={isDarkMode ? "#EF4444" : "#EF4444"} 
+              />
+              <Text style={[styles.clearButtonText, isDarkMode && styles.clearButtonTextDark]}>
+                Clear
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
-      <FlatList
-        data={filteredServices}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) =>
-          item ? (
-            <TouchableOpacity style={[styles.serviceCard, isDarkMode && styles.serviceCardDark]}>
-              {getServiceImageUrl(item) ? (
-                <Image 
-                  source={{ uri: getServiceImageUrl(item)! }} 
-                  style={styles.serviceImage}
-                  onError={(error) => {
-                    console.log('❌ ServicesScreen - Erreur image pour:', item.name, 'URL:', getServiceImageUrl(item));
-                    console.log('❌ ServicesScreen - Détails erreur:', JSON.stringify(error.nativeEvent, null, 2));
-                  }}
-                  onLoad={() => {
-                    console.log('✅ ServicesScreen - Image chargée:', getServiceImageUrl(item));
-                  }}
+
+      {/* Section des filtres par catégorie */}
+      {showFilters && (
+        <Animated.View 
+          style={[
+            styles.filtersSection, 
+            isDarkMode && styles.filtersSectionDark,
+            {
+              opacity: filtersAnimationValue,
+              maxHeight: filtersAnimationValue.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 300],
+              }),
+            }
+          ]}
+        >
+          <View style={styles.filtersHeader}>
+            <Ionicons 
+              name="filter-outline" 
+              size={18} 
+              color={isDarkMode ? "#60A5FA" : "#3498db"} 
+            />
+            <Text style={[styles.filtersTitle, isDarkMode && styles.filtersTitleDark]}>
+              Filtres
+            </Text>
+          </View>
+          
+          {/* Filtre par catégorie */}
+          <View style={styles.filterSection}>
+            <Text style={[styles.filterLabel, isDarkMode && styles.filterLabelDark]}>
+              Par catégorie
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoryFilterList}
+            >
+              {categories.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[
+                    styles.categoryFilterButton,
+                    isDarkMode && styles.categoryFilterButtonDark,
+                    selectedCategory === item.id && styles.categoryFilterButtonActive,
+                  ]}
+                  onPress={() => setSelectedCategory(item.id)}
+                >
+                  <Text style={[
+                    styles.categoryFilterText,
+                    isDarkMode && styles.categoryFilterTextDark,
+                    selectedCategory === item.id && styles.categoryFilterTextActive,
+                  ]}>
+                    {item.name || 'Catégorie'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </Animated.View>
+      )}
+
+      {/* Section du tri */}
+      {showSort && (
+        <Animated.View 
+          style={[
+            styles.sortSection, 
+            isDarkMode && styles.sortSectionDark,
+            {
+              opacity: sortAnimationValue,
+              maxHeight: sortAnimationValue.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 300],
+              }),
+            }
+          ]}
+        >
+          <View style={styles.sortHeader}>
+            <Ionicons 
+              name="swap-vertical-outline" 
+              size={18} 
+              color={isDarkMode ? "#60A5FA" : "#3498db"} 
+            />
+            <Text style={[styles.sortTitle, isDarkMode && styles.sortTitleDark]}>
+              Trier par
+            </Text>
+          </View>
+          
+          <View style={styles.sortOptionsContainer}>
+            {sortOptions.map((option) => (
+              <TouchableOpacity
+                key={option.id}
+                style={[
+                  styles.sortOptionButton,
+                  isDarkMode && styles.sortOptionButtonDark,
+                  sortOrder === option.id && styles.sortOptionButtonActive,
+                ]}
+                onPress={() => setSortOrder(option.id as any)}
+              >
+                <Ionicons 
+                  name={option.icon} 
+                  size={16} 
+                  color={
+                    sortOrder === option.id 
+                      ? "#fff" 
+                      : (isDarkMode ? "#9CA3AF" : "#666")
+                  } 
                 />
-              ) : (
-                <View style={[
-                  styles.serviceImage, 
-                  { 
-                    backgroundColor: isDarkMode ? '#374151' : '#f0f0f0', 
-                    justifyContent: 'center', 
-                    alignItems: 'center' 
-                  }
+                <Text style={[
+                  styles.sortOptionText,
+                  isDarkMode && styles.sortOptionTextDark,
+                  sortOrder === option.id && styles.sortOptionTextActive,
                 ]}>
-                  <Text style={{ fontSize: 24 }}>📷</Text>
-                </View>
-              )}
-              <View style={styles.serviceContent}>
-                <View style={styles.serviceInfo}>
-                  <Text style={[styles.serviceName, isDarkMode && styles.serviceNameDark]}>{item.name || 'Service'}</Text>
-                  <Text style={[styles.servicePrice, isDarkMode && styles.servicePriceDark]}>{item.price || 0} €</Text>
-                </View>
-                {/* Affichage du nom de la catégorie associée, en couleur bleue et gras */}
-                <Text style={{ 
-                  color: isDarkMode ? '#60A5FA' : '#3498db', 
-                  fontWeight: 'bold', 
-                  fontSize: 13, 
-                  marginBottom: 4 
-                }}>
-                  {getCategoryName((item as ServiceWithCategoryId).categoryId)}
+                  {option.label}
                 </Text>
-                <Text style={[styles.serviceDescription, isDarkMode && styles.serviceDescriptionDark]} numberOfLines={2}>
-                  {item.description || 'Description du service'}
-                </Text>
-                <View style={styles.serviceFooter}>
-                  <View style={styles.serviceDuration}>
-                    <Ionicons name="time-outline" size={16} color="#666" />
-                    <Text style={styles.serviceDurationText}>{item.duration || 0} min</Text>
-                  </View>
-                  <TouchableOpacity 
-                    style={styles.bookButton}
-                    onPress={() => handleBookService(item)}
-                  >
-                    <Text style={styles.bookButtonText}>Réserver</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </TouchableOpacity>
-          ) : null
-        }
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Animated.View>
+      )}
+      
+      <ScrollView 
+        style={{ flex: 1 }}
         contentContainerStyle={styles.servicesList}
-      />
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.servicesGrid}>
+          {sortedServices.map((item) =>
+            item ? (
+              <TouchableOpacity 
+                key={item.id}
+                style={[styles.serviceCard, isDarkMode && styles.serviceCardDark]}
+                onPress={() => handlePrestationDetail(item)}
+              >
+                {getServiceImageUrl(item) ? (
+                  <Image 
+                    source={{ uri: getServiceImageUrl(item)! }} 
+                    style={styles.serviceImage}
+                    onError={(error) => {
+                      // Image failed to load
+                    }}
+                    onLoad={() => {
+                      // Image loaded successfully
+                    }}
+                  />
+                ) : (
+                  <View style={[
+                    styles.serviceImage, 
+                    { 
+                      backgroundColor: isDarkMode ? '#374151' : '#f0f0f0', 
+                      justifyContent: 'center', 
+                      alignItems: 'center' 
+                    }
+                  ]}>
+                    <Text style={{ fontSize: 20 }}>📷</Text>
+                  </View>
+                )}
+                <View style={styles.serviceContent}>
+                  <View style={styles.serviceInfo}>
+                    <Text style={[styles.serviceName, isDarkMode && styles.serviceNameDark]} numberOfLines={1}>
+                      {item.name || 'Service'}
+                    </Text>
+                    <Text style={[styles.servicePrice, isDarkMode && styles.servicePriceDark]}>{item.price || 0} €</Text>
+                  </View>
+                  {/* Affichage du nom de la catégorie associée, en couleur bleue et gras */}
+                  <Text style={{ 
+                    color: isDarkMode ? '#60A5FA' : '#3498db', 
+                    fontWeight: 'bold', 
+                    fontSize: 11, 
+                    marginBottom: 4 
+                  }} numberOfLines={1}>
+                    {getCategoryName((item as ServiceWithCategoryId).categoryId)}
+                  </Text>
+                  <Text style={[styles.serviceDescription, isDarkMode && styles.serviceDescriptionDark]} numberOfLines={3}>
+                    {item.description || 'Description de la prestation'}
+                  </Text>
+                  <View style={styles.serviceFooter}>
+                    <View style={styles.serviceDuration}>
+                      <Ionicons 
+                        name="time-outline" 
+                        size={14} 
+                        color={isDarkMode ? '#9CA3AF' : '#666'} 
+                      />
+                      <Text style={[styles.serviceDurationText, isDarkMode && styles.serviceDurationTextDark]}>
+                        {item.duration || 0} min
+                      </Text>
+                    </View>
+                    <TouchableOpacity 
+                      style={styles.bookButton}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleBookService(item);
+                      }}
+                    >
+                      <Text style={styles.bookButtonText}>Réserver</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ) : null
+          )}
+        </View>
+      </ScrollView>
 
       {/* Modal de calendrier */}
       <Modal
@@ -856,7 +1108,7 @@ const ServicesScreen: React.FC = () => {
             
             {selectedService && (
               <View style={styles.serviceInfoModal}>
-                <Text style={styles.serviceNameModal}>{selectedService.name || 'Service sélectionné'}</Text>
+                <Text style={styles.serviceNameModal}>{selectedService.name || 'Prestation sélectionnée'}</Text>
                 <Text style={styles.servicePriceModal}>{selectedService.price || 0}€ • {selectedService.duration || 0} min</Text>
                 <Text style={styles.serviceDescModal}>{selectedService.description || 'Description du service'}</Text>
               </View>
@@ -1023,23 +1275,8 @@ const ServicesScreen: React.FC = () => {
                 <>
                   {(() => {
                     const totalSlots = availableSlots.length > 0 ? availableSlots : getDefaultTimeSlots();
-                    console.log('🎬 Rendu des créneaux - Total:', totalSlots.length);
-                    console.log('🎬 availableSlots.length:', availableSlots.length);
-                    console.log('🎬 getDefaultTimeSlots().length:', getDefaultTimeSlots().length);
                     
-                    const morningSlots = totalSlots.filter((slot: any) => {
-                      const hour = parseInt(slot.time.split(':')[0]);
-                      return hour >= 9 && hour < 12;
-                    });
-                    console.log('🌅 Créneaux matin filtrés:', morningSlots);
-                    
-                    const afternoonSlots = totalSlots.filter((slot: any) => {
-                      const hour = parseInt(slot.time.split(':')[0]);
-                      return hour >= 14 && hour < 17;
-                    });
-                    console.log('🌇 Créneaux après-midi filtrés:', afternoonSlots);
-                    
-                    return null; // On retourne null car c'est juste pour les logs
+                    return null; // Just for the logic, no visual output needed
                   })()}
                   
                   {/* Créneaux du matin - Section améliorée */}
@@ -1064,7 +1301,6 @@ const ServicesScreen: React.FC = () => {
                           return hour >= 9 && hour < 12;
                         })
                         .map((slot: any, index: number) => {
-                          console.log(`🔘 Bouton matin ${index}: ${slot.time} - disponible: ${slot.available}`);
                           return (
                             <TouchableOpacity
                               key={`morning-${index}`}
@@ -1074,10 +1310,8 @@ const ServicesScreen: React.FC = () => {
                                 !slot.available && styles.timeButtonDisabled
                               ]}
                               onPress={() => {
-                                console.log(`🎯 Clic sur créneau: ${slot.time}`);
                                 if (slot.available) {
                                   setSelectedTime(slot.time);
-                                  console.log(`✅ Heure sélectionnée: ${slot.time}`);
                                   
                                   // Animation de confirmation
                                   Animated.sequence([
@@ -1134,7 +1368,6 @@ const ServicesScreen: React.FC = () => {
                           return hour >= 14 && hour < 17;
                         })
                         .map((slot: any, index: number) => {
-                          console.log(`🔘 Bouton après-midi ${index}: ${slot.time} - disponible: ${slot.available}`);
                           return (
                             <TouchableOpacity
                               key={`afternoon-${index}`}
@@ -1144,10 +1377,8 @@ const ServicesScreen: React.FC = () => {
                                 !slot.available && styles.timeButtonDisabled
                               ]}
                               onPress={() => {
-                                console.log(`🎯 Clic sur créneau: ${slot.time}`);
                                 if (slot.available) {
                                   setSelectedTime(slot.time);
-                                  console.log(`✅ Heure sélectionnée: ${slot.time}`);
                                   
                                   // Animation de confirmation
                                   Animated.sequence([
@@ -1256,7 +1487,7 @@ const ServicesScreen: React.FC = () => {
                   console.log('🎯 Tentative de confirmation de réservation');
                   console.log('🕐 Heure sélectionnée:', selectedTime);
                   console.log('📅 Date sélectionnée:', selectedDate);
-                  console.log('🔧 Service sélectionné:', selectedService?.name);
+                  console.log('🔧 Prestation sélectionnée:', selectedService?.name);
                   confirmBooking();
                 }}
                 disabled={isLoading || !selectedTime}
@@ -1274,12 +1505,272 @@ const ServicesScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Carte de détail de prestation */}
+      <PrestationDetailCard
+        prestation={selectedPrestation}
+        visible={showPrestationDetail}
+        onClose={() => setShowPrestationDetail(false)}
+        onBook={handleBookFromDetail}
+        isDarkMode={isDarkMode}
+      />
+      
       </SafeAreaView>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
+  // Styles pour les filtres collapsibles (copiés d'AppointmentsScreen)
+  tabContainer: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  tabContainerDark: {
+    backgroundColor: '#1F2937',
+    borderBottomColor: '#374151',
+  },
+  tabWrapper: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  servicesCount: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  servicesCountDark: {
+    color: '#E5E7EB',
+  },
+  actionButtonsContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 0,
+    justifyContent: 'flex-start',
+  },
+  actionButtonsContainerRight: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 0,
+    justifyContent: 'flex-end',
+  },
+  filterToggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#f0f9ff',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+    alignSelf: 'flex-start',
+  },
+  filterToggleButtonDark: {
+    backgroundColor: '#1e293b',
+    borderColor: '#374151',
+  },
+  filterToggleButtonActive: {
+    backgroundColor: '#3498db',
+    borderColor: '#3498db',
+  },
+  filterToggleText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#3498db',
+    marginLeft: 6,
+  },
+  filterToggleTextDark: {
+    color: '#60A5FA',
+  },
+  filterToggleTextActive: {
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  filterIndicator: {
+    marginLeft: 4,
+  },
+  filterIndicatorText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  sortToggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#f0f9ff',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+    alignSelf: 'flex-start',
+  },
+  sortToggleButtonDark: {
+    backgroundColor: '#1e293b',
+    borderColor: '#374151',
+  },
+  sortToggleButtonActive: {
+    backgroundColor: '#3498db',
+    borderColor: '#3498db',
+  },
+  sortToggleText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#3498db',
+    marginLeft: 6,
+  },
+  sortToggleTextDark: {
+    color: '#60A5FA',
+  },
+  sortToggleTextActive: {
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  sortIndicator: {
+    marginLeft: 4,
+  },
+  sortIndicatorText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  clearButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#fee2e2',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
+  clearButtonDark: {
+    backgroundColor: '#450a0a',
+    borderColor: '#7f1d1d',
+  },
+  clearButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#EF4444',
+    marginLeft: 4,
+  },
+  clearButtonTextDark: {
+    color: '#EF4444',
+  },
+  filterSection: {
+    marginBottom: 16,
+  },
+  filterLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  filterLabelDark: {
+    color: '#9CA3AF',
+  },
+  categoryFilterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+    minHeight: 36,
+  },
+  categoryFilterButtonDark: {
+    backgroundColor: '#374151',
+    borderColor: '#4b5563',
+  },
+  categoryFilterButtonActive: {
+    backgroundColor: '#3498db',
+    borderColor: '#3498db',
+  },
+  categoryFilterText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6b7280',
+  },
+  categoryFilterTextDark: {
+    color: '#9CA3AF',
+  },
+  categoryFilterTextActive: {
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  categoryFilterList: {
+    paddingHorizontal: 0,
+  },
+  sortSection: {
+    backgroundColor: '#f8f9fa',
+    padding: 16,
+    marginBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e1e5e9',
+  },
+  sortSectionDark: {
+    backgroundColor: '#1e293b',
+    borderBottomColor: '#374151',
+  },
+  sortHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sortTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginLeft: 8,
+  },
+  sortTitleDark: {
+    color: '#9CA3AF',
+  },
+  sortOptionsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  sortOptionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+    minWidth: 120,
+  },
+  sortOptionButtonDark: {
+    backgroundColor: '#374151',
+    borderColor: '#4b5563',
+  },
+  sortOptionButtonActive: {
+    backgroundColor: '#3498db',
+    borderColor: '#3498db',
+  },
+  sortOptionText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6b7280',
+    marginLeft: 6,
+  },
+  sortOptionTextDark: {
+    color: '#9CA3AF',
+  },
+  sortOptionTextActive: {
+    color: '#ffffff',
+    fontWeight: '600',
+  },
+  // Styles existants
   monthGridDark: {
     backgroundColor: '#1F2937',
   },
@@ -1411,11 +1902,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   servicesList: {
-    padding: 16,
+    padding: 8,
+    paddingBottom: 20,
   },
   serviceCard: {
     backgroundColor: '#fff',
-    borderRadius: 10,
+    borderRadius: 12,
     overflow: 'hidden',
     marginBottom: 16,
     shadowColor: '#000',
@@ -1423,39 +1915,48 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+    width: '48%',
+    minHeight: 280,
   },
   serviceImage: {
     width: '100%',
-    height: 150,
+    height: 140,
+    resizeMode: 'cover',
   },
   serviceContent: {
-    padding: 16,
+    padding: 14,
+    flex: 1,
   },
   serviceInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    marginBottom: 6,
   },
   serviceName: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+    lineHeight: 20,
   },
   servicePrice: {
-    fontSize: 18,
+    fontSize: 13,
     color: '#3498db',
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   serviceDescription: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
     marginBottom: 12,
-    lineHeight: 20,
+    lineHeight: 18,
+    flex: 1,
   },
   serviceFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginTop: 'auto',
+    paddingTop: 8,
   },
   serviceDuration: {
     flexDirection: 'row',
@@ -1463,7 +1964,7 @@ const styles = StyleSheet.create({
   },
   serviceDurationText: {
     marginLeft: 4,
-    fontSize: 14,
+    fontSize: 11,
     color: '#666',
   },
   bookButton: {
@@ -1471,11 +1972,14 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     backgroundColor: '#3498db',
     borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 100,
   },
   bookButtonText: {
     color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
+    fontWeight: '600',
+    fontSize: 12,
   },
   card: {
     backgroundColor: '#fff',
@@ -2030,6 +2534,9 @@ const styles = StyleSheet.create({
   servicePriceDark: {
     color: '#60A5FA', // blue-400
   },
+  serviceDurationTextDark: {
+    color: '#9CA3AF', // gray-400
+  },
   modalOverlayDark: {
     backgroundColor: 'rgba(0,0,0,0.8)',
   },
@@ -2274,6 +2781,19 @@ const styles = StyleSheet.create({
     color: '#3498db',
     fontSize: 16,
     fontWeight: '700',
+  },
+  // Styles pour l'affichage en deux colonnes
+  serviceRow: {
+    justifyContent: 'space-between',
+    paddingHorizontal: 1,
+    gap: 2,
+  },
+  servicesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    gap: 8,
   },
 });
 

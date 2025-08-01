@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Appointment } from '../../types/index';
 import { formatDateWithTime } from '../../utils/date';
 import { ThemeContext } from '../../contexts/ThemeContext';
+import { Ionicons } from '@expo/vector-icons';
 
 interface AppointmentCardProps {
   appointment: Appointment;
@@ -18,25 +19,48 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({
   const { isDarkMode } = useContext(ThemeContext);
   const { id, service, date, time, status } = appointment;
   
-  // Déterminer la couleur du statut
-  const getStatusColor = () => {
+  // Déterminer la couleur et l'icône du statut
+  const getStatusInfo = () => {
     switch(status) {
-      case 'confirmed': return '#4caf50';
-      case 'pending': return '#ff9800';
-      case 'cancelled': return '#f44336';
-      default: return '#9e9e9e';
+      case 'confirmed': 
+        return { 
+          color: '#10B981', 
+          icon: 'checkmark-circle' as const,
+          bgColor: '#ECFDF5',
+          text: 'Confirmé'
+        };
+      case 'pending': 
+        return { 
+          color: '#F59E0B', 
+          icon: 'time' as const,
+          bgColor: '#FFFBEB',
+          text: 'En attente'
+        };
+      case 'cancelled': 
+        return { 
+          color: '#EF4444', 
+          icon: 'close-circle' as const,
+          bgColor: '#FEF2F2',
+          text: 'Annulé'
+        };
+      case 'completed': 
+        return { 
+          color: '#8B5CF6', 
+          icon: 'checkmark-done-circle' as const,
+          bgColor: '#F3E8FF',
+          text: 'Terminé'
+        };
+      default: 
+        return { 
+          color: '#6B7280', 
+          icon: 'help-circle' as const,
+          bgColor: '#F9FAFB',
+          text: 'Inconnu'
+        };
     }
   };
-  
-  // Traduire le statut
-  const getStatusText = () => {
-    switch(status) {
-      case 'confirmed': return 'Confirmé';
-      case 'pending': return 'En attente';
-      case 'cancelled': return 'Annulé';
-      default: return 'Inconnu';
-    }
-  };
+
+  const statusInfo = getStatusInfo();
 
   return (
     <TouchableOpacity 
@@ -45,34 +69,82 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({
       disabled={status === 'cancelled'}
     >
       <View style={styles.content}>
-        <Text style={[styles.serviceName, isDarkMode && styles.serviceNameDark]}>{service?.name || 'Service non défini'}</Text>
-        <View style={styles.row}>
-          <Text style={[styles.dateTime, isDarkMode && styles.dateTimeDark]}>{formatDateWithTime(date, time)}</Text>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor() }]}>
-            <Text style={styles.statusText}>{getStatusText()}</Text>
+        {/* En-tête avec titre et statut */}
+        <View style={styles.header}>
+          <View style={styles.serviceSection}>
+            <Text style={[styles.serviceName, isDarkMode && styles.serviceNameDark]} numberOfLines={1}>
+              {service?.name || 'Service non défini'}
+            </Text>
+          </View>
+          <View style={[
+            styles.statusBadge, 
+            { backgroundColor: isDarkMode ? statusInfo.color + '20' : statusInfo.bgColor }
+          ]}>
+            <Ionicons 
+              name={statusInfo.icon} 
+              size={14} 
+              color={statusInfo.color} 
+              style={styles.statusIcon}
+            />
+            <Text style={[styles.statusText, { color: statusInfo.color }]}>
+              {statusInfo.text}
+            </Text>
           </View>
         </View>
-        <Text style={[styles.price, isDarkMode && styles.priceDark]}>{service?.price ? `${service.price} €` : 'Prix non défini'}</Text>
-        {/* Affichage du bouton Annuler ou Supprimer selon le statut */}
-        {status === 'cancelled' ? (
+
+        {/* Informations de date et heure */}
+        <View style={styles.dateTimeSection}>
+          <View style={styles.dateTimeRow}>
+            <Ionicons 
+              name="calendar-outline" 
+              size={16} 
+              color={isDarkMode ? '#9CA3AF' : '#6B7280'} 
+            />
+            <Text style={[styles.dateTime, isDarkMode && styles.dateTimeDark]}>
+              {formatDateWithTime(date, time)}
+            </Text>
+          </View>
+          <View style={styles.priceRow}>
+            <Ionicons 
+              name="card-outline" 
+              size={16} 
+              color={isDarkMode ? '#60A5FA' : '#3498db'} 
+            />
+            <Text style={[styles.price, isDarkMode && styles.priceDark]}>
+              {service?.price ? `${service.price} €` : 'Prix non défini'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Durée du service */}
+        {service?.duration && (
+          <View style={styles.durationSection}>
+            <Ionicons 
+              name="time-outline" 
+              size={16} 
+              color={isDarkMode ? '#9CA3AF' : '#6B7280'} 
+            />
+            <Text style={[styles.duration, isDarkMode && styles.durationDark]}>
+              Durée : {service.duration} min
+            </Text>
+          </View>
+        )}
+
+        {/* Bouton d'action */}
+        {status === 'cancelled' || status === 'completed' ? (
           <TouchableOpacity 
-            style={[styles.cancelButton, { borderColor: '#e74c3c' }, isDarkMode && styles.cancelButtonDark]}
+            style={[styles.deleteButton, isDarkMode && styles.deleteButtonDark]}
             onPress={() => onCancel && onCancel(id)}
           >
-            <Text style={[styles.cancelButtonText, { color: '#e74c3c' }]}>Supprimer</Text>
-          </TouchableOpacity>
-        ) : status === 'completed' ? (
-          <TouchableOpacity 
-            style={[styles.cancelButton, { borderColor: '#e74c3c' }, isDarkMode && styles.cancelButtonDark]}
-            onPress={() => onCancel && onCancel(id)}
-          >
-            <Text style={[styles.cancelButtonText, { color: '#e74c3c' }]}>Supprimer</Text>
+            <Ionicons name="trash-outline" size={16} color="#EF4444" />
+            <Text style={styles.deleteButtonText}>Supprimer</Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity 
             style={[styles.cancelButton, isDarkMode && styles.cancelButtonDark]}
             onPress={() => onCancel && onCancel(id)}
           >
+            <Ionicons name="close-outline" size={16} color="#EF4444" />
             <Text style={styles.cancelButtonText}>Annuler</Text>
           </TouchableOpacity>
         )}
@@ -84,77 +156,142 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({
 const styles = StyleSheet.create({
   container: {
     backgroundColor: '#fff',
-    borderRadius: 10,
-    marginBottom: 15,
+    borderRadius: 12,
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
     overflow: 'hidden',
   },
   content: {
     padding: 16,
   },
-  serviceName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 5,
-  },
-  row: {
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
+  },
+  serviceSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 12,
+  },
+  serviceIcon: {
+    marginRight: 8,
+  },
+  serviceName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    flex: 1,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusIcon: {
+    marginRight: 4,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  dateTimeSection: {
+    marginBottom: 12,
+  },
+  dateTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
   },
   dateTime: {
     fontSize: 14,
-    color: '#555',
+    color: '#6B7280',
+    marginLeft: 6,
   },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  statusText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   price: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#2c3e50',
+    color: '#3498db',
+    marginLeft: 6,
+  },
+  durationSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  duration: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginLeft: 6,
   },
   cancelButton: {
-    marginTop: 10,
-    padding: 8,
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    borderRadius: 5,
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#e3e3e3',
+    borderColor: '#FECACA',
   },
   cancelButtonText: {
-    color: '#dc3545',
+    color: '#EF4444',
     fontSize: 14,
     fontWeight: '500',
+    marginLeft: 6,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  deleteButtonText: {
+    color: '#EF4444',
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 6,
   },
   // Styles pour le mode sombre
   containerDark: {
-    backgroundColor: '#1F2937', // gray-800
+    backgroundColor: '#1F2937',
   },
   serviceNameDark: {
-    color: '#FFFFFF',
+    color: '#F9FAFB',
   },
   dateTimeDark: {
-    color: '#9CA3AF', // gray-400
+    color: '#9CA3AF',
   },
   priceDark: {
-    color: '#60A5FA', // blue-400
+    color: '#60A5FA',
+  },
+  durationDark: {
+    color: '#9CA3AF',
   },
   cancelButtonDark: {
-    backgroundColor: '#374151', // gray-700
-    borderColor: '#4B5563', // gray-600
+    backgroundColor: '#374151',
+    borderColor: '#4B5563',
+  },
+  deleteButtonDark: {
+    backgroundColor: '#374151',
+    borderColor: '#4B5563',
   },
 });
