@@ -72,9 +72,16 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({
         {/* En-tête avec titre et statut */}
         <View style={styles.header}>
           <View style={styles.serviceSection}>
-            <Text style={[styles.serviceName, isDarkMode && styles.serviceNameDark]} numberOfLines={1}>
+            <Text style={[styles.serviceName, isDarkMode && styles.serviceNameDark]} numberOfLines={2}>
               {service?.name || 'Service non défini'}
             </Text>
+            {service?.description && (
+              <Text style={[
+                { fontSize: 14, color: isDarkMode ? '#9CA3AF' : '#6B7280', marginTop: 2 }
+              ]} numberOfLines={1}>
+                {service.description}
+              </Text>
+            )}
           </View>
           <View style={[
             styles.statusBadge, 
@@ -82,7 +89,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({
           ]}>
             <Ionicons 
               name={statusInfo.icon} 
-              size={14} 
+              size={16} 
               color={statusInfo.color} 
               style={styles.statusIcon}
             />
@@ -93,12 +100,15 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({
         </View>
 
         {/* Informations de date et heure */}
-        <View style={styles.dateTimeSection}>
+        <View style={[
+          styles.dateTimeSection,
+          isDarkMode && { backgroundColor: '#374151', borderLeftColor: '#60A5FA' }
+        ]}>
           <View style={styles.dateTimeRow}>
             <Ionicons 
               name="calendar-outline" 
-              size={16} 
-              color={isDarkMode ? '#9CA3AF' : '#6B7280'} 
+              size={18} 
+              color={isDarkMode ? '#60A5FA' : '#3498db'} 
             />
             <Text style={[styles.dateTime, isDarkMode && styles.dateTimeDark]}>
               {formatDateWithTime(date, time)}
@@ -107,25 +117,28 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({
           <View style={styles.priceRow}>
             <Ionicons 
               name="card-outline" 
-              size={16} 
-              color={isDarkMode ? '#60A5FA' : '#3498db'} 
+              size={18} 
+              color={isDarkMode ? '#34D399' : '#10B981'} 
             />
             <Text style={[styles.price, isDarkMode && styles.priceDark]}>
-              {service?.price ? `${service.price} €` : 'Prix non défini'}
+              {service?.price ? `${String(service.price)} €` : 'Prix non défini'}
             </Text>
           </View>
         </View>
 
         {/* Durée du service */}
         {service?.duration && (
-          <View style={styles.durationSection}>
+          <View style={[
+            styles.durationSection,
+            isDarkMode && { backgroundColor: '#1E3A8A' }
+          ]}>
             <Ionicons 
               name="time-outline" 
               size={16} 
-              color={isDarkMode ? '#9CA3AF' : '#6B7280'} 
+              color={isDarkMode ? '#93C5FD' : '#1E40AF'} 
             />
             <Text style={[styles.duration, isDarkMode && styles.durationDark]}>
-              Durée : {service.duration} min
+              Durée : {String(service.duration || 0)} min
             </Text>
           </View>
         )}
@@ -156,135 +169,165 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({
 const styles = StyleSheet.create({
   container: {
     backgroundColor: '#fff',
-    borderRadius: 12,
-    marginBottom: 12,
+    borderRadius: 16,
+    marginBottom: 16,
+    marginHorizontal: 4,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
   },
   content: {
-    padding: 16,
+    padding: 20,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    alignItems: 'flex-start',
+    marginBottom: 16,
   },
   serviceSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
     flex: 1,
-    marginRight: 12,
+    marginRight: 16,
   },
   serviceIcon: {
     marginRight: 8,
   },
   serviceName: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
     color: '#1F2937',
-    flex: 1,
+    lineHeight: 24,
+    marginBottom: 4,
   },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    minWidth: 80,
+    justifyContent: 'center',
   },
   statusIcon: {
-    marginRight: 4,
+    marginRight: 6,
   },
   statusText: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   dateTimeSection: {
-    marginBottom: 12,
+    backgroundColor: '#F8FAFC',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3498db',
   },
   dateTimeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   dateTime: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginLeft: 6,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginLeft: 8,
   },
   priceRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   price: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#3498db',
-    marginLeft: 6,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#10B981',
+    marginLeft: 8,
   },
   durationSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    backgroundColor: '#EBF8FF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 16,
+    alignSelf: 'flex-start',
   },
   duration: {
-    fontSize: 13,
-    color: '#6B7280',
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E40AF',
     marginLeft: 6,
   },
   cancelButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
     backgroundColor: '#FEF2F2',
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: 12,
+    borderWidth: 2,
     borderColor: '#FECACA',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   cancelButtonText: {
-    color: '#EF4444',
-    fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 6,
+    color: '#DC2626',
+    fontSize: 15,
+    fontWeight: '700',
+    marginLeft: 8,
   },
   deleteButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
     backgroundColor: '#FEF2F2',
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: 12,
+    borderWidth: 2,
     borderColor: '#FECACA',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   deleteButtonText: {
-    color: '#EF4444',
-    fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 6,
+    color: '#DC2626',
+    fontSize: 15,
+    fontWeight: '700',
+    marginLeft: 8,
   },
   // Styles pour le mode sombre
   containerDark: {
     backgroundColor: '#1F2937',
+    borderColor: '#374151',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
   },
   serviceNameDark: {
     color: '#F9FAFB',
   },
   dateTimeDark: {
-    color: '#9CA3AF',
+    color: '#F9FAFB',
   },
   priceDark: {
-    color: '#60A5FA',
+    color: '#34D399',
   },
   durationDark: {
-    color: '#9CA3AF',
+    color: '#93C5FD',
   },
   cancelButtonDark: {
     backgroundColor: '#374151',

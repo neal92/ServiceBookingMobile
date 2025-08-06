@@ -2,6 +2,7 @@ import React, { useContext } from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import { AuthContext } from '../contexts/AuthContext';
 import { ServicesScreen } from '../screens/app';
+import EditProfileScreen from '../screens/app/EditProfileScreen';
 import TabNavigator from './TabNavigator';
 import { ActivityIndicator, View } from 'react-native';
 import { RootStackParamList } from '../types/navigation';
@@ -46,6 +47,11 @@ const AppNavigator = () => {
         name="Services" 
         component={ServicesScreen} 
         options={{ title: 'Services' }} 
+      />
+      <Stack.Screen 
+        name="EditProfile" 
+        component={EditProfileScreen} 
+        options={{ headerShown: false }} 
       />
     </Stack.Navigator>
   );

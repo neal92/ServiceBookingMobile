@@ -51,7 +51,7 @@ const TabNavigator = () => {
             iconName = 'help-outline';
           }
 
-          let label = '';
+          let label = 'Tab';
           if (route.name === 'HomeTab') {
             label = 'Accueil';
           } else if (route.name === 'ServicesTab') {

@@ -1,272 +1,81 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, FlatList, TouchableOpacity, Image, TextInput, Alert, Modal, ScrollView, Animated } from 'react-native';
+import React, { useState, useEffect, useContext } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, FlatList, TouchableOpacity, Image, TextInput, Modal, ScrollView, Alert, Animated, KeyboardAvoidingView, Platform } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Card, Title, Paragraph, Button } from 'react-native-paper';
 import { useAuth } from '../../hooks/useAuth';
 import { ThemeContext } from '../../contexts/ThemeContext';
-import { Service, Appointment, CreateAppointmentRequest } from '../../types/index';
+import { Service } from '../../types/index';
 import { getAllServices, getAllCategories } from '../../api/services';
-import { createAppointment, getAvailableTimeSlots, checkTimeSlotAvailability, getUserAppointments } from '../../api/appointments';
 import { Loading } from '../../components/common/Loading';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { testAndShowAPIConnection } from '../../utils/networkUtils';
 import { API_URL } from '../../config/api';
-import PrestationDetailCard from '../../components/prestations/PrestationDetailCard';
 
 const ServicesScreen: React.FC = () => {
-  // --- Hooks et fonctions calendrier HomeScreen ---
-  const weekDays = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-  const [currentMonth, setCurrentMonth] = React.useState(new Date());
-
-  function getMonthYearLabel(date: Date) {
-    return date.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
-  }
-
-  function isSameDay(a: Date, b: Date) {
-    return (
-      a && b &&
-      a.getDate() === b.getDate() &&
-      a.getMonth() === b.getMonth() &&
-      a.getFullYear() === b.getFullYear()
-    );
-  }
-
-  // Removed duplicate isToday function to fix duplicate identifier error
-
-  function isPastDay(date: Date) {
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    return date < today;
-  }
-
-  function goToPreviousMonth() {
-    setCurrentMonth(prev => {
-      const d = new Date(prev);
-      d.setMonth(d.getMonth() - 1);
-      return d;
-    });
-  }
-
-  function goToNextMonth() {
-    setCurrentMonth(prev => {
-      const d = new Date(prev);
-      d.setMonth(d.getMonth() + 1);
-      return d;
-    });
-  }
-
-  function getMonthGrid(monthDate: Date) {
-    const year = monthDate.getFullYear();
-    const month = monthDate.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const daysInMonth = lastDay.getDate();
-    let firstDayOfWeek = firstDay.getDay();
-    firstDayOfWeek = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1;
-    const emptyStartDays = Array.from({ length: firstDayOfWeek }, () => null);
-    const monthDays = [];
-    for (let i = 1; i <= daysInMonth; i++) {
-      monthDays.push(new Date(year, month, i));
-    }
-    const totalDaysAdded = firstDayOfWeek + daysInMonth;
-    const remainingDays = totalDaysAdded % 7;
-    const emptyEndDays = remainingDays > 0 ? Array.from({ length: 7 - remainingDays }, () => null) : [];
-    const allDays = [...emptyStartDays, ...monthDays, ...emptyEndDays];
-    const weeks = [];
-    for (let i = 0; i < allDays.length; i += 7) {
-      weeks.push(allDays.slice(i, i + 7));
-    }
-    return weeks;
-  }
-
-  const monthGrid = getMonthGrid(currentMonth);
   const navigation = useNavigation();
   const { token, user } = useAuth();
   const { isDarkMode } = useContext(ThemeContext);
-  // Animation pour le changement de mode (dark/light)
-  const [modeAnimValue] = useState(new Animated.Value(isDarkMode ? 1 : 0));
-  const prevIsDarkMode = useRef(isDarkMode);
-
-  useEffect(() => {
-    if (prevIsDarkMode.current !== isDarkMode) {
-      Animated.timing(modeAnimValue, {
-        toValue: isDarkMode ? 1 : 0,
-        duration: 400,
-        useNativeDriver: false,
-      }).start();
-      prevIsDarkMode.current = isDarkMode;
-    }
-  }, [isDarkMode]);
+  
+  // Définir la base URL pour les images
+  const BASE_URL = API_URL.replace('/api', '');
+  
+  console.log('🔍 Configuration:', { API_URL, BASE_URL });
+  
   const [services, setServices] = useState<Service[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([{ id: 'all', name: 'Tous' }]);
-  // Ajout d'un état pour la recherche
   const [search, setSearch] = useState('');
   const [showSearch, setShowSearch] = useState(false);
-  
-  // États pour les filtres collapsibles
   const [showFilters, setShowFilters] = useState(false);
   const [showSort, setShowSort] = useState(false);
   const [sortOrder, setSortOrder] = useState<'price-asc' | 'price-desc' | 'duration-asc' | 'duration-desc' | 'name-asc' | 'name-desc'>('name-asc');
-  
-  // Animations pour les filtres
-  const filtersAnimationValue = useRef(new Animated.Value(0)).current;
-  const sortAnimationValue = useRef(new Animated.Value(0)).current;
-  
-  // États pour le modal de réservation
-  const [showBookingModal, setShowBookingModal] = useState(false);
-  const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [selectedTime, setSelectedTime] = useState('09:00');
-  const [availableSlots, setAvailableSlots] = useState<any[]>([]);
-  const [loadingSlots, setLoadingSlots] = useState(false);
-  const [clientNotes, setClientNotes] = useState('');
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  
-  // État pour la carte de détail de prestation
-  const [showPrestationDetail, setShowPrestationDetail] = useState(false);
-  const [selectedPrestation, setSelectedPrestation] = useState<Service | null>(null);
-
-  // Animations pour les filtres
-  const timeSectionOpacity = useRef(new Animated.Value(0)).current;
-  const timeSectionScale = useRef(new Animated.Value(0.9)).current;
-  const selectedTimeAnimation = useRef(new Animated.Value(1)).current;
-
-  // Fonction pour charger les rendez-vous
-  const loadAppointments = async () => {
-    if (!user || !token) return;
-    
-    try {
-      const data = await getUserAppointments(token);
-      
-      // Analyser chaque rendez-vous individuellement
-      if (Array.isArray(data)) {
-        
-        // Filtrer les rendez-vous invalides
-        const validAppointments = data.filter((appointment, index) => {
-          if (!appointment) {
-            return false;
-          }
-          if (!appointment.service) {
-            return false;
-          }
-          if (!appointment.service?.name) {
-            return false;
-          }
-          
-          return true;
-        });
-        
-        setAppointments(validAppointments);
-      } else {
-        setAppointments([]);
-      }
-    } catch (error) {
-      console.error('💥 Erreur lors du chargement des rendez-vous:', error);
-      if (error instanceof Error) {
-        console.error('💥 Stack trace:', error.stack);
-      }
-      setAppointments([]);
-    }
-  };
-
-  // Fonction pour obtenir les rendez-vous d'une date spécifique
-  const getAppointmentsForDate = (date: Date) => {
-    if (!appointments || appointments.length === 0) return [];
-    
-    const dateString = date.toISOString().split('T')[0];
-    return appointments.filter(appointment => {
-      // Vérifications complètes de l'objet appointment
-      if (!appointment || !appointment.date || !appointment.service) return false;
-      
-      try {
-        const appointmentDate = new Date(appointment.date).toISOString().split('T')[0];
-        return appointmentDate === dateString;
-      } catch (error) {
-        console.error('Erreur lors du parsing de la date:', error);
-        return false;
-      }
-    });
-  };
-
-  // Fonction pour charger les créneaux disponibles
-  const loadAvailableSlots = async (date: Date) => {
-    if (!selectedService) {
-      return;
-    }
-
-    // Pour les prestations de moins d'1h : créneaux de 30min
-    const timeSlots = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30'];
-    
-    const formattedSlots = timeSlots.map(time => ({ 
-      time, 
-      available: true, 
-      period: parseInt(time.split(':')[0]) < 12 ? 'morning' : 'afternoon' 
-    }));
-    
-    return formattedSlots;
-  };
-
-  // Effet pour charger les créneaux quand la date ou le service change
-  useEffect(() => {
-    if (selectedService && showBookingModal) {
-      loadAvailableSlots(selectedDate);
-      
-      // Animation d'entrée pour la section horaire
-      Animated.parallel([
-        Animated.timing(timeSectionOpacity, {
-          toValue: 1,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-        Animated.spring(timeSectionScale, {
-          toValue: 1,
-          tension: 100,
-          friction: 8,
-          useNativeDriver: true,
-        })
-      ]).start();
-    } else {
-      // Réinitialiser l'animation
-      timeSectionOpacity.setValue(0);
-      timeSectionScale.setValue(0.9);
-    }
-  }, [selectedDate, selectedService, showBookingModal]);
-
-  useEffect(() => {
-    if (user && token) {
-      loadServices();
-      loadCategories();
-      loadAppointments();
-    }
-  }, [user, token]);
-  
-  // Fonction pour tester la connectivité au serveur
-  const testConnection = async () => {
-    await testAndShowAPIConnection();
-  };
+  const [showServiceModal, setShowServiceModal] = useState(false);
+  const [showCreateServiceModal, setShowCreateServiceModal] = useState(false);
+  const [createServiceStep, setCreateServiceStep] = useState(1);
+  const [newService, setNewService] = useState({
+    name: '',
+    description: '',
+    price: '',
+    duration: '',
+    categoryId: '',
+    image: null as any
+  });
+  const [createServiceLoading, setCreateServiceLoading] = useState(false);
+  const [showImageOptions, setShowImageOptions] = useState(false);
+  const [showRecap, setShowRecap] = useState(false);
+  const [slideAnimation] = useState(new Animated.Value(0));
 
   const loadServices = async () => {
     try {
       setIsLoading(true);
-      const response = await getAllServices(token || undefined);
-      setServices(response);
-    } catch (error: any) {
-      console.error('Erreur lors du chargement des prestations:', error);
-      // Si l'erreur est due à un timeout, proposer de tester la connexion
-      const errorMsg = error?.message || '';
-      if (errorMsg.includes('timeout') || errorMsg.includes('trop de temps')) {
-        Alert.alert(
-          'Erreur de connexion',
-          'Impossible de charger les prestations. Voulez-vous tester la connexion au serveur?',
-          [
-            { text: 'Annuler', style: 'cancel' },
-            { text: 'Tester', onPress: testConnection }
-          ]
-        );
+      console.log('🔄 Chargement des services...');
+      
+      const data = await getAllServices();
+      console.log('✅ Services récupérés:', data?.length || 0);
+      console.log('🔍 Premier service:', data?.[0]);
+      console.log('🔍 Structure des données:', JSON.stringify(data?.[0], null, 2));
+      
+      // Debug des images pour chaque service
+      if (Array.isArray(data)) {
+        console.log('🖼️ Debug des images:');
+        data.forEach((service, index) => {
+          console.log(`Service ${index + 1}: ${service.name}`);
+          console.log(`  - ID: ${service.id}`);
+          console.log(`  - imageUrl: ${service.imageUrl || 'undefined'}`);
+          console.log(`  - image: ${service.image || 'undefined'}`);
+          console.log(`  - Toutes les propriétés:`, Object.keys(service));
+        });
+        setServices(data);
+      } else {
+        console.warn('⚠️ Format de données inattendu:', data);
+        setServices([]);
       }
+    } catch (error) {
+      console.error('❌ Erreur lors du chargement des services:', error);
+      setServices([]);
     } finally {
       setIsLoading(false);
     }
@@ -274,506 +83,617 @@ const ServicesScreen: React.FC = () => {
 
   const loadCategories = async () => {
     try {
-      const response = await getAllCategories(token || undefined);
-      // On suppose que chaque catégorie a un id et un nom
-      setCategories([{ id: 'all', name: 'Tous' }, ...response]);
-    } catch (error) {
-      console.error('Erreur lors du chargement des catégories:', error);
-    }
-  };
-
-  // Fonction pour gérer la réservation d'une prestation
-  const handleBookService = (service: Service) => {
-    setSelectedService(service);
-    setShowCalendarModal(true); // Ouvrir d'abord le calendrier
-  };
-
-  // Fonction pour afficher les détails d'une prestation
-  const handlePrestationDetail = (prestation: Service) => {
-    // Enrichir la prestation avec le nom de la catégorie
-    const enrichedPrestation = {
-      ...prestation,
-      category: getCategoryName((prestation as ServiceWithCategoryId).categoryId)
-    };
-    setSelectedPrestation(enrichedPrestation);
-    setShowPrestationDetail(true);
-  };
-
-  // Fonction pour réserver depuis la carte de détail
-  const handleBookFromDetail = (prestation: Service) => {
-    setShowPrestationDetail(false);
-    handleBookService(prestation);
-  };
-
-  // Fonction pour gérer la sélection de date dans le calendrier
-  const handleDateSelect = (date: Date) => {
-    setSelectedDate(date);
-    setShowCalendarModal(false); // Fermer le calendrier
-    setShowBookingModal(true); // Ouvrir le modal de sélection d'heure
-    
-    // Le useEffect va se charger automatiquement de charger les créneaux
-    // car selectedDate va changer et showBookingModal sera true
-  };
-
-  // Fonction pour générer les jours du mois pour le calendrier
-  const generateCalendarDays = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const startDate = new Date(firstDay);
-    
-    // Ajuster au lundi de la semaine contenant le premier jour
-    const dayOfWeek = firstDay.getDay();
-    const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-    startDate.setDate(firstDay.getDate() - daysToSubtract);
-    
-    const days: (Date | null)[] = [];
-    const current = new Date(startDate);
-    
-    // Générer 42 jours (6 semaines)
-    for (let i = 0; i < 42; i++) {
-      if (current.getMonth() === month) {
-        days.push(new Date(current));
-      } else {
-        days.push(null);
+      console.log('🔄 Chargement des catégories...');
+      const data = await getAllCategories();
+      console.log('✅ Catégories récupérées:', data?.length || 0);
+      
+      if (Array.isArray(data) && data.length > 0) {
+        const formattedCategories = [
+          { id: 'all', name: 'Tous' },
+          ...data.map((cat: any) => ({
+            id: cat.id?.toString() || 'unknown',
+            name: cat.name || 'Catégorie sans nom'
+          }))
+        ];
+        setCategories(formattedCategories);
       }
-      current.setDate(current.getDate() + 1);
+    } catch (error) {
+      console.error('❌ Erreur lors du chargement des catégories:', error);
     }
-    
-    return days;
   };
 
-  // Fonction pour vérifier si c'est aujourd'hui
-  const isToday = (date: Date) => {
-    const today = new Date();
-    return date.toDateString() === today.toDateString();
-  };
+  useFocusEffect(
+    React.useCallback(() => {
+      loadServices();
+      loadCategories();
+    }, [])
+  );
 
-  // Fonction pour naviguer dans le calendrier
-  const navigateCalendar = (direction: 'prev' | 'next') => {
-    const newDate = new Date(selectedDate);
-    if (direction === 'next') {
-      newDate.setMonth(newDate.getMonth() + 1);
-    } else {
-      newDate.setMonth(newDate.getMonth() - 1);
+  // Fonction pour tester l'URL d'une image
+  const testImageUrl = async (url: string) => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      const response = await fetch(url, { 
+        method: 'HEAD',
+        signal: controller.signal 
+      });
+      
+      clearTimeout(timeoutId);
+      console.log(`🔍 Test image URL ${url}: ${response.status}`);
+      return response.ok;
+    } catch (error) {
+      console.log(`❌ Test image URL ${url}: ${error}`);
+      return false;
     }
-    setSelectedDate(newDate);
   };
 
-  // Fonctions pour gérer les filtres collapsibles
+  // Test des URLs d'images quand les services sont chargés
+  useEffect(() => {
+    if (services.length > 0) {
+      console.log('🔍 Configuration API_URL actuelle:', API_URL);
+      console.log('🔍 Base URL pour images:', BASE_URL);
+      
+      // Tester plusieurs chemins pour une image
+      const testService = services.find(s => s.image);
+      if (testService) {
+        const testPaths = [
+          `/uploads/${testService.image}`,
+          `/images/${testService.image}`,
+          `/static/${testService.image}`,
+          `/api/services/${testService.id}/image`,
+          `/${testService.image}`,
+          `/public/uploads/${testService.image}`,
+          `/storage/${testService.image}`
+        ];
+        
+        console.log('🧪 Test de différents chemins pour:', testService.name);
+        testPaths.forEach(async (path) => {
+          const fullUrl = `${BASE_URL}${path}`;
+          const isWorking = await testImageUrl(fullUrl);
+          if (isWorking) {
+            console.log('✅ CHEMIN FONCTIONNEL TROUVÉ:', path);
+          }
+        });
+      }
+    }
+  }, [services]);
+
   const toggleFilters = () => {
-    const toValue = showFilters ? 0 : 1;
-    
-    Animated.timing(filtersAnimationValue, {
-      toValue,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
-    
     setShowFilters(!showFilters);
   };
 
   const toggleSort = () => {
-    const toValue = showSort ? 0 : 1;
-    
-    Animated.timing(sortAnimationValue, {
-      toValue,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
-    
     setShowSort(!showSort);
   };
 
-  // Options de tri disponibles
-  const sortOptions = [
-    { id: 'name-asc', label: 'Nom (A-Z)', icon: 'text-outline' as const },
-    { id: 'name-desc', label: 'Nom (Z-A)', icon: 'text-outline' as const },
-    { id: 'price-asc', label: 'Prix croissant', icon: 'arrow-up-outline' as const },
-    { id: 'price-desc', label: 'Prix décroissant', icon: 'arrow-down-outline' as const },
-    { id: 'duration-asc', label: 'Durée croissante', icon: 'time-outline' as const },
-    { id: 'duration-desc', label: 'Durée décroissante', icon: 'time-outline' as const },
-  ];
+  const toggleSearch = () => {
+    setShowSearch(!showSearch);
+    if (showSearch) {
+      setSearch('');
+    }
+  };
 
-  // Fonction pour confirmer et créer la réservation
-  const confirmBooking = async () => {
-    if (!selectedService || !user || !token) {
-      Alert.alert('Erreur', 'Informations manquantes pour la réservation');
+  const openServiceDetail = (service: Service) => {
+    setSelectedService(service);
+    setShowServiceModal(true);
+  };
+
+  const closeServiceModal = () => {
+    setShowServiceModal(false);
+    setSelectedService(null);
+  };
+
+  const openCreateServiceModal = () => {
+    setShowCreateServiceModal(true);
+    setCreateServiceStep(1);
+    setShowImageOptions(false);
+    setShowRecap(false);
+    setNewService({
+      name: '',
+      description: '',
+      price: '',
+      duration: '',
+      categoryId: '',
+      image: null
+    });
+  };
+
+  const closeCreateServiceModal = () => {
+    setShowCreateServiceModal(false);
+    setCreateServiceStep(1);
+    setShowImageOptions(false);
+    setShowRecap(false);
+    setNewService({
+      name: '',
+      description: '',
+      price: '',
+      duration: '',
+      categoryId: '',
+      image: null
+    });
+  };
+
+  const nextStep = () => {
+    console.log('🔄 nextStep called - Current step:', createServiceStep);
+    const newStep = createServiceStep + 1;
+    console.log('🔄 Moving to step:', newStep);
+    setCreateServiceStep(newStep);
+  };
+
+  const prevStep = () => {
+    console.log('🔄 prevStep called - Current step:', createServiceStep);
+    const newStep = createServiceStep - 1;
+    console.log('🔄 Moving to step:', newStep);
+    setCreateServiceStep(newStep);
+  };
+
+  const proceedToImageChoice = () => {
+    setShowImageOptions(true);
+  };
+
+  const skipImage = () => {
+    setShowImageOptions(false);
+    setShowRecap(true);
+  };
+
+  const handleImagePicker = async (source: 'camera' | 'gallery') => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    
+    if (permissionResult.granted === false) {
+      Alert.alert('Permission requise', 'Permission d\'accès à la galerie requise pour ajouter une image');
       return;
     }
 
-    // Pop-up de validation AVANT la réservation
-    Alert.alert(
-      'Confirmer la réservation',
-      `Voulez-vous vraiment réserver la prestation "${selectedService.name || 'la prestation sélectionnée'}" le ${selectedDate.toLocaleDateString('fr-FR')} à ${selectedTime} ?`,
-      [
-        {
-          text: 'Annuler',
-          style: 'cancel',
-          onPress: () => {},
-        },
-        {
-          text: 'Confirmer',
-          style: 'default',
-          onPress: async () => {
-            try {
-              setIsLoading(true);
-              // Préparer les données selon le format attendu par l'API
-              const appointmentData: CreateAppointmentRequest = {
-                clientName: `${user.firstName} ${user.lastName || ''}`.trim() || 'Client',
-                clientEmail: user.email, // Correct: clientEmail au lieu de email
-                clientPhone: (user as any).phone || '', // Téléphone optionnel
-                serviceId: selectedService.id, // Garder comme string
-                date: selectedDate.toISOString().split('T')[0], // Format YYYY-MM-DD
-                time: selectedTime, // Format HH:MM
-                notes: clientNotes.trim() || '', // Notes optionnelles
-                createdBy: String(user.id || user.email) // ID ou email de l'utilisateur qui crée
-              };
-
-              // Vérification que tous les champs requis sont présents
-              if (!appointmentData.clientName || !appointmentData.clientEmail || !appointmentData.serviceId || !appointmentData.date || !appointmentData.time) {
-                console.error('Champs manquants:', {
-                  clientName: !!appointmentData.clientName,
-                  clientEmail: !!appointmentData.clientEmail,
-                  serviceId: !!appointmentData.serviceId,
-                  date: !!appointmentData.date,
-                  time: !!appointmentData.time
-                });
-                Alert.alert('Erreur', 'Tous les champs requis ne sont pas remplis');
-                return;
-              }
-
-              console.log('Création du rendez-vous:', appointmentData);
-              console.log('Type de serviceId:', typeof appointmentData.serviceId);
-              console.log('Valeurs individuelles:', {
-                clientName: appointmentData.clientName,
-                clientEmail: appointmentData.clientEmail, 
-                serviceId: appointmentData.serviceId,
-                date: appointmentData.date,
-                time: appointmentData.time
-              });
-              const newAppointment = await createAppointment(appointmentData, token);
-
-              // Pop-up de validation APRÈS la réservation avec options
-              Alert.alert(
-                'Réservation confirmée !',
-                `Votre rendez-vous pour "${selectedService.name || 'la prestation sélectionnée'}" a été réservé pour le ${selectedDate.toLocaleDateString('fr-FR')} à ${selectedTime}`,
-                [
-                  {
-                    text: 'Voir mes rendez-vous',
-                    style: 'default',
-                    onPress: () => {
-                      setShowBookingModal(false);
-                      setSelectedService(null);
-                      setClientNotes(''); // Réinitialiser les notes
-                      loadAppointments(); // Recharger les rendez-vous pour mettre à jour le calendrier
-                      // Naviguer vers l'écran des rendez-vous
-                      (navigation as any).navigate('AppointmentsTab');
-                    }
-                  },
-                  {
-                    text: 'OK',
-                    style: 'cancel',
-                    onPress: () => {
-                      setShowBookingModal(false);
-                      setSelectedService(null);
-                      setClientNotes(''); // Réinitialiser les notes
-                      loadAppointments(); // Recharger les rendez-vous pour mettre à jour le calendrier
-                      
-                      // Notifier la page d'accueil qu'elle doit se rafraîchir
-                      (navigation as any).navigate('HomeTab', { 
-                        refresh: true, 
-                        timestamp: Date.now() 
-                      });
-                    }
-                  }
-                ]
-              );
-            } catch (error: any) {
-              console.error('Erreur lors de la création du rendez-vous:', error);
-              Alert.alert(
-                'Erreur',
-                error?.response?.data?.message || 'Impossible de créer le rendez-vous. Veuillez réessayer.'
-              );
-            } finally {
-              setIsLoading(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  // Debug temporaire pour voir les valeurs de service.category et des catégories
-  useEffect(() => {
-    // Debug logs removed for performance
-  }, [services, categories]);
-
-  if (!user) {
-    return (
-      <View style={[
-        { flex: 1, justifyContent: 'center', alignItems: 'center' },
-        { backgroundColor: isDarkMode ? '#111827' : '#f8f9fa' }
-      ]}>
-        <Card style={[
-          styles.card, 
-          isDarkMode && styles.serviceCardDark,
-          { width: '90%', maxWidth: 400, padding: 8 }
-        ]}> 
-          <Card.Content>
-            <Title style={[{ color: '#333' }, isDarkMode && styles.serviceNameDark]}>OUPS !</Title>
-            <Paragraph style={[{ color: '#333' }, isDarkMode && styles.serviceDescriptionDark]}>
-              Veuillez vous connecter pour voir les prestations disponibles.
-            </Paragraph>
-          </Card.Content>
-          <Card.Actions>
-            <Button
-              mode="contained"
-              onPress={() => navigation.navigate('AuthTab' as never)}
-              style={{ backgroundColor: '#1a73e8' }}
-            >
-              Se connecter
-            </Button>
-          </Card.Actions>
-        </Card>
-      </View>
-    );
-  }
-
-  // Correction du typage Service pour accepter categoryId
-  type ServiceWithCategoryId = Service & { categoryId?: number | null };
-  
-  // Fonction pour construire l'URL de l'image (même logique que HomeScreen)
-  const getServiceImageUrl = (service: Service): string | null => {
-    if (service.image && service.image !== 'null' && service.image !== '') {
-      // Utiliser la route API spécifique pour récupérer l'image par ID de service
-      const imageUrl = `${API_URL}/services/${service.id}/image`;
-      return imageUrl;
+    if (source === 'camera') {
+      const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+      if (cameraPermission.granted === false) {
+        Alert.alert('Permission requise', 'Permission d\'accès à la caméra requise');
+        return;
+      }
     }
-    return null;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setNewService(prev => ({...prev, image: result.assets[0]}));
+      setShowImageOptions(false);
+      setShowRecap(true);
+    }
   };
-  
-  // Correction du filtrage pour que selectedCategory soit bien un string (id) et conversion lors de la comparaison
-  const filteredServices = (services as ServiceWithCategoryId[]).filter(service => {
-    if (!service) return false;
-    // Filtre par catégorie
+
+  const launchCamera = async () => {
+    const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+    
+    if (cameraPermission.granted === false) {
+      Alert.alert('Permission requise', 'Permission d\'accès à la caméra requise');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setNewService(prev => ({...prev, image: result.assets[0]}));
+      setShowImageOptions(false);
+      setShowRecap(true);
+    }
+  };
+
+  const editField = (field: string) => {
+    setShowRecap(false);
+    setShowImageOptions(false);
+    // Aller à l'étape correspondant au champ
+    switch (field) {
+      case 'name':
+        setCreateServiceStep(1);
+        break;
+      case 'description':
+        setCreateServiceStep(2);
+        break;
+      case 'price':
+        setCreateServiceStep(3);
+        break;
+      case 'duration':
+        setCreateServiceStep(4);
+        break;
+      case 'categoryId':
+        setCreateServiceStep(5);
+        break;
+    }
+  };
+
+  const createService = async () => {
+    if (!newService.name.trim() || !newService.price || !newService.duration || !newService.categoryId) {
+      Alert.alert('Erreur', 'Veuillez remplir tous les champs obligatoires');
+      return;
+    }
+
+    setCreateServiceLoading(true);
+    try {
+      // Créer FormData pour envoyer l'image
+      const formData = new FormData();
+      formData.append('name', newService.name.trim());
+      formData.append('description', newService.description.trim());
+      formData.append('price', newService.price);
+      formData.append('duration', newService.duration);
+      formData.append('categoryId', newService.categoryId);
+
+      // Ajouter l'image si elle existe
+      if (newService.image) {
+        const imageUri = newService.image.uri;
+        const filename = imageUri.split('/').pop();
+        const match = /\.(\w+)$/.exec(filename || '');
+        const type = match ? `image/${match[1]}` : 'image/jpeg';
+
+        formData.append('image', {
+          uri: imageUri,
+          name: filename,
+          type: type,
+        } as any);
+      }
+
+      console.log('🔄 Création du service...');
+
+      const response = await fetch(`${API_URL}/services`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data',
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(`Erreur ${response.status}: ${errorData}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ Service créé:', result);
+
+      // Recharger la liste des services
+      await loadServices();
+      
+      // Fermer le modal
+      closeCreateServiceModal();
+      
+      Alert.alert('Succès', 'Service créé avec succès !');
+    } catch (error) {
+      console.error('❌ Erreur lors de la création du service:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
+      Alert.alert('Erreur', `Erreur lors de la création du service: ${errorMessage}`);
+    } finally {
+      setCreateServiceLoading(false);
+    }
+  };
+
+  // Filtrage et tri des services
+  const filteredAndSortedServices = React.useMemo(() => {
+    let filtered = services;
+
+    // Debug pour le filtrage
+    console.log('🔍 Filtrage - selectedCategory:', selectedCategory);
+    console.log('🔍 Filtrage - services count:', services.length);
+    if (services.length > 0) {
+      console.log('🔍 Premier service:', {
+        id: services[0].id,
+        name: services[0].name,
+        category: services[0].category,
+        categoryId: services[0].categoryId,
+        categoryName: services[0].categoryName
+      });
+    }
+
+    // Filtrage par catégorie
     if (selectedCategory && selectedCategory !== 'all') {
-      if (String(service.categoryId) !== String(selectedCategory)) return false;
+      filtered = filtered.filter(service => {
+        // Comparer avec l'ID de catégorie (categoryId) ou category si c'est un ID, ou categoryName si c'est un nom
+        const matches = 
+          service.categoryId?.toString() === selectedCategory ||
+          service.category?.toString() === selectedCategory ||
+          service.categoryName === selectedCategory;
+        
+        console.log(`🔍 Service "${service.name}": categoryId=${service.categoryId}, category=${service.category}, categoryName=${service.categoryName}, matches=${matches}`);
+        return matches;
+      });
+      console.log('🔍 Services filtrés:', filtered.length);
     }
-    // Filtre par recherche
-    if (showSearch && search && !service.name.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
 
-  // Fonction pour trier les services
-  const sortedServices = [...filteredServices].sort((a, b) => {
-    switch (sortOrder) {
-      case 'name-asc':
-        return (a.name || '').localeCompare(b.name || '');
-      case 'name-desc':
-        return (b.name || '').localeCompare(a.name || '');
-      case 'price-asc':
-        return (a.price || 0) - (b.price || 0);
-      case 'price-desc':
-        return (b.price || 0) - (a.price || 0);
-      case 'duration-asc':
-        return (a.duration || 0) - (b.duration || 0);
-      case 'duration-desc':
-        return (b.duration || 0) - (a.duration || 0);
-      default:
-        return 0;
+    // Filtrage par recherche
+    if (search.trim()) {
+      const searchLower = search.toLowerCase().trim();
+      filtered = filtered.filter(service =>
+        service.name?.toLowerCase().includes(searchLower) ||
+        service.description?.toLowerCase().includes(searchLower) ||
+        service.category?.toLowerCase().includes(searchLower) ||
+        service.categoryName?.toLowerCase().includes(searchLower)
+      );
     }
-  });
 
-  // Trouver le nom de la catégorie à partir de l'id
-  const getCategoryName = (categoryId: number | null | undefined) => {
-    if (!categoryId) return 'Catégorie inconnue';
-    const cat = categories.find(c => String(c.id) === String(categoryId));
-    return cat ? cat.name : 'Catégorie inconnue';
+    // Tri
+    const sorted = [...filtered].sort((a, b) => {
+      switch (sortOrder) {
+        case 'price-asc':
+          return (a.price || 0) - (b.price || 0);
+        case 'price-desc':
+          return (b.price || 0) - (a.price || 0);
+        case 'duration-asc':
+          return (a.duration || 0) - (b.duration || 0);
+        case 'duration-desc':
+          return (b.duration || 0) - (a.duration || 0);
+        case 'name-desc':
+          return (b.name || '').localeCompare(a.name || '');
+        case 'name-asc':
+        default:
+          return (a.name || '').localeCompare(b.name || '');
+      }
+    });
+
+    return sorted;
+  }, [services, selectedCategory, search, sortOrder]);
+
+  const formatPrice = (price: number | string | undefined | null) => {
+    if (price === undefined || price === null) return 'Prix non défini';
+    
+    // Convertir en nombre si c'est une chaîne
+    const numPrice = typeof price === 'string' ? parseFloat(price) : price;
+    
+    // Vérifier si c'est un nombre valide
+    if (isNaN(numPrice)) return 'Prix non défini';
+    
+    return `${numPrice.toFixed(2)} €`;
+  };
+
+  const formatDuration = (duration: number | string | undefined | null) => {
+    if (duration === undefined || duration === null) return 'Durée non définie';
+    
+    // Convertir en nombre si c'est une chaîne
+    const numDuration = typeof duration === 'string' ? parseInt(duration) : duration;
+    
+    // Vérifier si c'est un nombre valide
+    if (isNaN(numDuration)) return 'Durée non définie';
+    
+    if (numDuration < 60) return `${numDuration} min`;
+    
+    const hours = Math.floor(numDuration / 60);
+    const minutes = numDuration % 60;
+    
+    if (minutes === 0) return `${hours}h`;
+    return `${hours}h${minutes.toString().padStart(2, '0')}`;
+  };
+
+  // Composant d'image intelligente qui teste plusieurs URLs
+  const SmartImage = ({ service, style, placeholderStyle }: any) => {
+    const [workingUrl, setWorkingUrl] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [hasError, setHasError] = useState(false);
+
+    useEffect(() => {
+      const findWorkingUrl = async () => {
+        if (!service.image) {
+          setIsLoading(false);
+          return;
+        }
+
+        const possibleUrls = [
+          `${BASE_URL}/uploads/${service.image}`,
+          `${BASE_URL}/images/${service.image}`,
+          `${BASE_URL}/static/${service.image}`,
+          `${BASE_URL}/api/services/${service.id}/image`,
+          `${BASE_URL}/${service.image}`,
+          `${BASE_URL}/public/uploads/${service.image}`,
+          `${BASE_URL}/storage/${service.image}`
+        ];
+
+        for (const url of possibleUrls) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000);
+            
+            const response = await fetch(url, { 
+              method: 'HEAD',
+              signal: controller.signal 
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (response.ok) {
+              console.log('✅ URL d\'image fonctionnelle trouvée:', url);
+              setWorkingUrl(url);
+              setIsLoading(false);
+              return;
+            }
+          } catch (error) {
+            // Continue to next URL
+          }
+        }
+
+        console.log('❌ Aucune URL d\'image fonctionnelle trouvée pour:', service.name);
+        setHasError(true);
+        setIsLoading(false);
+      };
+
+      findWorkingUrl();
+    }, [service]);
+
+    if (isLoading) {
+      return (
+        <View style={placeholderStyle}>
+          <Ionicons name="time-outline" size={24} color="#9CA3AF" />
+          <Text style={{ fontSize: 10, color: '#9CA3AF', marginTop: 4, textAlign: 'center' }}>
+            Chargement...
+          </Text>
+        </View>
+      );
+    }
+
+    if (hasError || !workingUrl) {
+      return (
+        <View style={placeholderStyle}>
+          <Ionicons name="image-outline" size={32} color="#9CA3AF" />
+          <Text style={{ fontSize: 10, color: '#9CA3AF', marginTop: 4, textAlign: 'center' }}>
+            Image indisponible
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <Image
+        source={{ uri: workingUrl }}
+        style={style}
+        resizeMode="cover"
+        onError={() => {
+          console.log('❌ Erreur finale pour URL validée:', workingUrl);
+          setHasError(true);
+        }}
+        onLoad={() => {
+          console.log('✅ Image chargée avec succès:', workingUrl);
+        }}
+      />
+    );
+  };
+
+  const renderServiceItem = ({ item }: { item: Service }) => {
+    console.log('🖼️ Service:', item.name);
+    console.log('🔍 imageUrl:', item.imageUrl);
+    console.log('🔍 image:', item.image);
+    
+    return (
+      <TouchableOpacity style={styles.serviceCardContainer} onPress={() => openServiceDetail(item)}>
+        <Card style={[styles.serviceCard, isDarkMode && styles.serviceCardDark]}>
+          <Card.Content style={styles.serviceCardContent}>
+            {/* Image ou icône */}
+            <View style={[styles.serviceImageContainer, isDarkMode && styles.serviceImageContainerDark]}>
+              <SmartImage
+                service={item}
+                style={styles.serviceImage}
+                placeholderStyle={[styles.serviceImagePlaceholder, isDarkMode && styles.serviceImagePlaceholderDark]}
+              />
+            </View>
+            
+            {/* Informations du service */}
+            <View style={styles.serviceInfo}>
+              <Title style={[styles.serviceTitle, isDarkMode && styles.serviceTitleDark]} numberOfLines={2}>
+                {item.name}
+              </Title>
+              <Paragraph 
+                style={[styles.serviceDescription, isDarkMode && styles.serviceDescriptionDark]} 
+                numberOfLines={2}
+              >
+                {item.description}
+              </Paragraph>
+              
+              {/* Catégorie juste sous la description */}
+              {(item.categoryName || item.category) && (
+                <Text style={[styles.serviceCategory, isDarkMode && styles.serviceCategoryDark]}>
+                  {item.categoryName || item.category}
+                </Text>
+              )}
+              
+              {/* Prix et durée */}
+              <View style={styles.serviceMeta}>
+                <Text style={[styles.servicePrice, isDarkMode && styles.servicePriceDark]}>
+                  {formatPrice(item.price)}
+                </Text>
+                <Text style={[styles.serviceDuration, isDarkMode && styles.serviceDurationDark]}>
+                  {formatDuration(item.duration)}
+                </Text>
+              </View>
+            </View>
+          </Card.Content>
+        </Card>
+      </TouchableOpacity>
+    );
   };
 
   if (isLoading) {
     return <Loading />;
   }
 
-  // Renvoie la liste par défaut des créneaux horaires (matin et après-midi, 30min)
-  function getDefaultTimeSlots() {
-    // Créneaux de 30 minutes de 9h à 12h et de 14h à 17h
-    const slots = [
-      '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-      '14:00', '14:30', '15:00', '15:30', '16:00', '16:30'
-    ];
-    return slots.map(time => ({
-      time,
-      available: true,
-      period: parseInt(time.split(':')[0], 10) < 12 ? 'morning' : 'afternoon'
-    }));
-  }
-
   return (
-    <Animated.View
-      style={{
-        flex: 1,
-        backgroundColor: modeAnimValue.interpolate({
-          inputRange: [0, 1],
-          outputRange: ['#f8f9fa', '#111827']
-        })
-      }}
-    >
-      <SafeAreaView style={{ flex: 1 }}>
+    <SafeAreaView style={[styles.container, isDarkMode && styles.containerDark]}>
+      {/* Header avec contrôles */}
       <View style={[styles.header, isDarkMode && styles.headerDark]}>
         <View style={styles.titleSection}>
-          <Text style={[styles.title, isDarkMode && styles.titleDark]}>ServiceBooking</Text>
-          <Text style={[styles.subtitle, isDarkMode && styles.subtitleDark]}>Découvrez nos prestations et réservez</Text>
+          <Text style={[styles.appName, isDarkMode && styles.appNameDark]}>
+            ServiceBooking
+          </Text>
+          <Text style={[styles.headerSubtitle, isDarkMode && styles.headerSubtitleDark]}>
+            Simplifiez votre gestion de rendez-vous
+          </Text>
         </View>
-        <View style={{ flexDirection: 'row' }}>
-          <TouchableOpacity onPress={testConnection} style={{ marginRight: 15 }}>
-            <Ionicons name="refresh" size={24} color={isDarkMode ? "#60A5FA" : "#3498db"} />
+        <View style={styles.headerControls}>
+          <TouchableOpacity
+            style={[styles.controlButton, isDarkMode && styles.controlButtonDark]}
+            onPress={toggleSearch}
+          >
+            <Ionicons 
+              name={showSearch ? "close" : "search"} 
+              size={20} 
+              color={isDarkMode ? "#60A5FA" : "#3498db"} 
+            />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setShowSearch(s => !s)}>
-            <Ionicons name="search" size={24} color={isDarkMode ? "#fff" : "#333"} />
+          <TouchableOpacity
+            style={[styles.controlButton, isDarkMode && styles.controlButtonDark]}
+            onPress={toggleFilters}
+          >
+            <Ionicons 
+              name="filter" 
+              size={20} 
+              color={isDarkMode ? "#60A5FA" : "#3498db"} 
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.controlButton, isDarkMode && styles.controlButtonDark]}
+            onPress={toggleSort}
+          >
+            <Ionicons 
+              name="swap-vertical" 
+              size={20} 
+              color={isDarkMode ? "#60A5FA" : "#3498db"} 
+            />
           </TouchableOpacity>
         </View>
       </View>
-      
+
+      {/* Espacement après header */}
+      <View style={{ height: 16 }} />
+
+      {/* Barre de recherche */}
       {showSearch && (
-        <TextInput
-          style={[styles.searchInput, isDarkMode && styles.searchInputDark]}
-          placeholder="Rechercher un service..."
-          placeholderTextColor={isDarkMode ? "#9CA3AF" : "#999"}
-          value={search}
-          onChangeText={setSearch}
-          autoFocus
-        />
+        <View style={[styles.searchContainer, isDarkMode && styles.searchContainerDark]}>
+          <TextInput
+            style={[styles.searchInput, isDarkMode && styles.searchInputDark]}
+            placeholder="Rechercher un service..."
+            placeholderTextColor={isDarkMode ? "#9CA3AF" : "#999"}
+            value={search}
+            onChangeText={setSearch}
+            autoFocus
+          />
+        </View>
       )}
-      
-      {/* Saut de ligne avant les filtres */}
-      <View style={{ height: 10 }} />
-      
-      {/* Compteur de services - au-dessus des filtres */}
-      <View style={{ 
-        paddingHorizontal: 16, 
-        paddingVertical: 8,
-        backgroundColor: isDarkMode ? '#111827' : '#f8f9fa'
-      }}>
-        <Text style={[styles.servicesCount, isDarkMode && styles.servicesCountDark, { fontSize: 18, fontWeight: '700' }]}>
-          {sortedServices.length} service{sortedServices.length > 1 ? 's' : ''} disponible{sortedServices.length > 1 ? 's' : ''}
+
+      {/* Compteur de services */}
+      <View style={[styles.servicesCounter, isDarkMode && styles.servicesCounterDark]}>
+        <Text style={[styles.servicesCount, isDarkMode && styles.servicesCountDark]}>
+          {(filteredAndSortedServices || []).length || 0} service{(filteredAndSortedServices || []).length > 1 ? 's' : ''} disponible{(filteredAndSortedServices || []).length > 1 ? 's' : ''}
         </Text>
       </View>
-      
-      {/* Section des boutons de filtres et tri */}
-      <View style={[
-        styles.tabContainer, 
-        isDarkMode && styles.tabContainerDark,
-        { backgroundColor: isDarkMode ? '#111827' : '#f8f9fa' }
-      ]}>
-        <View style={styles.tabWrapper}>
-        </View>
-        
-        {/* Boutons de filtres et tri - alignés à droite */}
-        <View style={styles.actionButtonsContainerRight}>
-          <TouchableOpacity 
-            onPress={toggleFilters}
-            style={[
-              styles.filterToggleButton, 
-              isDarkMode && styles.filterToggleButtonDark,
-              (selectedCategory && selectedCategory !== 'all') && styles.filterToggleButtonActive
-            ]}
-          >
-            <Ionicons 
-              name={showFilters ? "close" : "filter"} 
-              size={20} 
-              color={
-                (selectedCategory && selectedCategory !== 'all') 
-                  ? "#fff" 
-                  : (isDarkMode ? "#60A5FA" : "#3498db")
-              } 
-            />
-            <Text style={[
-              styles.filterToggleText, 
-              isDarkMode && styles.filterToggleTextDark,
-              (selectedCategory && selectedCategory !== 'all') && styles.filterToggleTextActive
-            ]}>
-              {showFilters ? "Fermer" : "Filtres"}
-            </Text>
-            {(selectedCategory && selectedCategory !== 'all') && (
-              <View style={styles.filterIndicator}>
-                <Text style={styles.filterIndicatorText}>•</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            onPress={toggleSort}
-            style={[
-              styles.sortToggleButton, 
-              isDarkMode && styles.sortToggleButtonDark,
-              (sortOrder !== 'name-asc') && styles.sortToggleButtonActive
-            ]}
-          >
-            <Ionicons 
-              name={showSort ? "close" : "swap-vertical"} 
-              size={20} 
-              color={
-                (sortOrder !== 'name-asc') 
-                  ? "#fff" 
-                  : (isDarkMode ? "#60A5FA" : "#3498db")
-              } 
-            />
-            <Text style={[
-              styles.sortToggleText, 
-              isDarkMode && styles.sortToggleTextDark,
-              (sortOrder !== 'name-asc') && styles.sortToggleTextActive
-            ]}>
-              {showSort ? "Fermer" : "Tri"}
-            </Text>
-            {(sortOrder !== 'name-asc') && (
-              <View style={styles.sortIndicator}>
-                <Text style={styles.sortIndicatorText}>•</Text>
-              </View>
-            )}
-          </TouchableOpacity>
 
-          {/* Bouton Clear visible seulement si des filtres sont appliqués */}
-          {((selectedCategory && selectedCategory !== 'all') || sortOrder !== 'name-asc') && (
-            <TouchableOpacity 
-              onPress={() => {
-                setSelectedCategory('all');
-                setSortOrder('name-asc');
-                setShowFilters(false);
-                setShowSort(false);
-              }}
-              style={[styles.clearButton, isDarkMode && styles.clearButtonDark]}
-            >
-              <Ionicons 
-                name="refresh" 
-                size={18} 
-                color={isDarkMode ? "#EF4444" : "#EF4444"} 
-              />
-              <Text style={[styles.clearButtonText, isDarkMode && styles.clearButtonTextDark]}>
-                Clear
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {/* Section des filtres par catégorie */}
+      {/* Filtres de catégories */}
       {showFilters && (
-        <Animated.View 
-          style={[
-            styles.filtersSection, 
-            isDarkMode && styles.filtersSectionDark,
-            {
-              opacity: filtersAnimationValue,
-              maxHeight: filtersAnimationValue.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, 300],
-              }),
-            }
-          ]}
-        >
+        <View style={[styles.filtersSection, isDarkMode && styles.filtersSectionDark]}>
           <View style={styles.filtersHeader}>
             <Ionicons 
               name="filter-outline" 
@@ -790,2010 +710,1981 @@ const ServicesScreen: React.FC = () => {
             <Text style={[styles.filterLabel, isDarkMode && styles.filterLabelDark]}>
               Par catégorie
             </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.categoryFilterList}
-            >
+            <View style={styles.statusFilters}>
               {categories.map((item) => (
                 <TouchableOpacity
                   key={item.id}
                   style={[
-                    styles.categoryFilterButton,
-                    isDarkMode && styles.categoryFilterButtonDark,
-                    selectedCategory === item.id && styles.categoryFilterButtonActive,
+                    styles.statusFilterButton,
+                    isDarkMode && styles.statusFilterButtonDark,
+                    selectedCategory === item.id && styles.statusFilterButtonActive,
                   ]}
-                  onPress={() => setSelectedCategory(item.id)}
+                  onPress={() => {
+                    const newCategory = selectedCategory === item.id ? null : item.id;
+                    console.log('🔄 Sélection catégorie:', { 
+                      current: selectedCategory, 
+                      clicked: item.id, 
+                      name: item.name, 
+                      new: newCategory 
+                    });
+                    setSelectedCategory(newCategory);
+                  }}
                 >
+                  <Ionicons 
+                    name="folder-outline" 
+                    size={16} 
+                    color={selectedCategory === item.id ? "#3498db" : (isDarkMode ? '#9CA3AF' : '#666')} 
+                  />
                   <Text style={[
-                    styles.categoryFilterText,
-                    isDarkMode && styles.categoryFilterTextDark,
-                    selectedCategory === item.id && styles.categoryFilterTextActive,
+                    styles.statusFilterText,
+                    isDarkMode && styles.statusFilterTextDark,
+                    selectedCategory === item.id && { color: "#3498db", fontWeight: '600' }
                   ]}>
-                    {item.name || 'Catégorie'}
+                    {item.name}
                   </Text>
                 </TouchableOpacity>
               ))}
-            </ScrollView>
+            </View>
           </View>
-        </Animated.View>
+        </View>
       )}
 
-      {/* Section du tri */}
+      {/* Options de tri */}
       {showSort && (
-        <Animated.View 
-          style={[
-            styles.sortSection, 
-            isDarkMode && styles.sortSectionDark,
-            {
-              opacity: sortAnimationValue,
-              maxHeight: sortAnimationValue.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, 300],
-              }),
-            }
-          ]}
-        >
-          <View style={styles.sortHeader}>
-            <Ionicons 
-              name="swap-vertical-outline" 
-              size={18} 
-              color={isDarkMode ? "#60A5FA" : "#3498db"} 
-            />
-            <Text style={[styles.sortTitle, isDarkMode && styles.sortTitleDark]}>
-              Trier par
-            </Text>
-          </View>
-          
-          <View style={styles.sortOptionsContainer}>
-            {sortOptions.map((option) => (
+        <View style={styles.sortContainer}>
+          <Text style={[styles.sortTitle, isDarkMode && styles.sortTitleDark]}>Trier par :</Text>
+          <View style={styles.sortOptions}>
+            {[
+              { id: 'name-asc', label: 'Nom (A-Z)' },
+              { id: 'name-desc', label: 'Nom (Z-A)' },
+              { id: 'price-asc', label: 'Prix (croissant)' },
+              { id: 'price-desc', label: 'Prix (décroissant)' },
+              { id: 'duration-asc', label: 'Durée (courte)' },
+              { id: 'duration-desc', label: 'Durée (longue)' }
+            ].map((option) => (
               <TouchableOpacity
                 key={option.id}
                 style={[
-                  styles.sortOptionButton,
-                  isDarkMode && styles.sortOptionButtonDark,
-                  sortOrder === option.id && styles.sortOptionButtonActive,
+                  styles.sortOption,
+                  isDarkMode && styles.sortOptionDark,
+                  sortOrder === option.id && styles.sortOptionActive,
+                  sortOrder === option.id && isDarkMode && styles.sortOptionActiveDark
                 ]}
                 onPress={() => setSortOrder(option.id as any)}
               >
-                <Ionicons 
-                  name={option.icon} 
-                  size={16} 
-                  color={
-                    sortOrder === option.id 
-                      ? "#fff" 
-                      : (isDarkMode ? "#9CA3AF" : "#666")
-                  } 
-                />
                 <Text style={[
                   styles.sortOptionText,
                   isDarkMode && styles.sortOptionTextDark,
-                  sortOrder === option.id && styles.sortOptionTextActive,
+                  sortOrder === option.id && styles.sortOptionTextActive
                 ]}>
                   {option.label}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
-        </Animated.View>
+        </View>
       )}
-      
-      <ScrollView 
-        style={{ flex: 1 }}
+
+      {/* Bouton d'ajout de service - uniquement pour les admins */}
+      {user && user.role === 'admin' && (
+        <View style={[styles.addServiceSection, isDarkMode && styles.addServiceSectionDark]}>
+          <TouchableOpacity
+            style={[styles.addServiceButton, isDarkMode && styles.addServiceButtonDark]}
+            onPress={openCreateServiceModal}
+          >
+            <Ionicons 
+              name="add-circle" 
+              size={24} 
+              color="#fff" 
+              style={styles.addServiceIcon}
+            />
+            <Text style={styles.addServiceText}>
+              Ajouter un nouveau service
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Liste des services */}
+      <FlatList
+        data={filteredAndSortedServices}
+        renderItem={renderServiceItem}
+        keyExtractor={(item) => item.id.toString()}
+        numColumns={2}
+        columnWrapperStyle={styles.serviceRow}
         contentContainerStyle={styles.servicesList}
         showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Ionicons 
+              name="cube-outline" 
+              size={64} 
+              color={isDarkMode ? "#4B5563" : "#D1D5DB"} 
+            />
+            <Text style={[styles.emptyText, isDarkMode && styles.emptyTextDark]}>
+              Aucun service trouvé
+            </Text>
+          </View>
+        }
+      />
+
+      {/* Modal de détail du service */}
+      <Modal
+        visible={showServiceModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeServiceModal}
       >
-        <View style={styles.servicesGrid}>
-          {sortedServices.map((item) =>
-            item ? (
-              <TouchableOpacity 
-                key={item.id}
-                style={[styles.serviceCard, isDarkMode && styles.serviceCardDark]}
-                onPress={() => handlePrestationDetail(item)}
-              >
-                {getServiceImageUrl(item) ? (
-                  <Image 
-                    source={{ uri: getServiceImageUrl(item)! }} 
-                    style={styles.serviceImage}
-                    onError={(error) => {
-                      // Image failed to load
-                    }}
-                    onLoad={() => {
-                      // Image loaded successfully
-                    }}
-                  />
-                ) : (
-                  <View style={[
-                    styles.serviceImage, 
-                    { 
-                      backgroundColor: isDarkMode ? '#374151' : '#f0f0f0', 
-                      justifyContent: 'center', 
-                      alignItems: 'center' 
+        <SafeAreaView style={[styles.modalContainer, isDarkMode && styles.modalContainerDark]}>
+          {selectedService && (
+            <View style={styles.modalContent}>
+              {/* Header du modal */}
+              <View style={[styles.modalHeader, isDarkMode && styles.modalHeaderDark]}>
+                <View style={styles.modalHeaderContent}>
+                  <Text style={[styles.modalHeaderTitle, isDarkMode && styles.modalHeaderTitleDark]}>
+                    Détail de la préstation
+
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.closeButton, isDarkMode && styles.closeButtonDark]}
+                    onPress={closeServiceModal}
+                  >
+                    <Ionicons name="close" size={24} color={isDarkMode ? "#f9fafb" : "#1f2937"} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <ScrollView style={styles.modalScrollView}>
+                {/* Image du service en pleine largeur */}
+                <View style={styles.serviceDetailImageContainer}>
+                  {(() => {
+                    let imageUrl = null;
+                    
+                    if (selectedService.imageUrl) {
+                      if (selectedService.imageUrl.includes('localhost')) {
+                        imageUrl = selectedService.imageUrl.replace('localhost:5000', BASE_URL.replace('http://', ''));
+                      } else if (selectedService.imageUrl.startsWith('http')) {
+                        imageUrl = selectedService.imageUrl;
+                      } else {
+                        imageUrl = `${BASE_URL}/uploads/${selectedService.imageUrl}`;
+                      }
+                    } else if (selectedService.image) {
+                      imageUrl = `${BASE_URL}/uploads/${selectedService.image}`;
                     }
-                  ]}>
-                    <Text style={{ fontSize: 20 }}>📷</Text>
-                  </View>
-                )}
-                <View style={styles.serviceContent}>
-                  <View style={styles.serviceInfo}>
-                    <Text style={[styles.serviceName, isDarkMode && styles.serviceNameDark]} numberOfLines={1}>
-                      {item.name || 'Service'}
-                    </Text>
-                    <Text style={[styles.servicePrice, isDarkMode && styles.servicePriceDark]}>{item.price || 0} €</Text>
-                  </View>
-                  {/* Affichage du nom de la catégorie associée, en couleur bleue et gras */}
-                  <Text style={{ 
-                    color: isDarkMode ? '#60A5FA' : '#3498db', 
-                    fontWeight: 'bold', 
-                    fontSize: 11, 
-                    marginBottom: 4 
-                  }} numberOfLines={1}>
-                    {getCategoryName((item as ServiceWithCategoryId).categoryId)}
-                  </Text>
-                  <Text style={[styles.serviceDescription, isDarkMode && styles.serviceDescriptionDark]} numberOfLines={3}>
-                    {item.description || 'Description de la prestation'}
-                  </Text>
-                  <View style={styles.serviceFooter}>
-                    <View style={styles.serviceDuration}>
-                      <Ionicons 
-                        name="time-outline" 
-                        size={14} 
-                        color={isDarkMode ? '#9CA3AF' : '#666'} 
+
+                    return imageUrl ? (
+                      <Image 
+                        source={{ uri: imageUrl }} 
+                        style={styles.serviceDetailImage}
+                        resizeMode="cover"
                       />
-                      <Text style={[styles.serviceDurationText, isDarkMode && styles.serviceDurationTextDark]}>
-                        {item.duration || 0} min
+                    ) : (
+                      <View style={[styles.serviceDetailImagePlaceholder, isDarkMode && styles.serviceDetailImagePlaceholderDark]}>
+                        <Ionicons 
+                          name="image-outline" 
+                          size={80} 
+                          color={isDarkMode ? "#6B7280" : "#9CA3AF"} 
+                        />
+                        <Text style={[styles.imagePlaceholderText, isDarkMode && styles.imagePlaceholderTextDark]}>
+                          Aucune image disponible
+                        </Text>
+                      </View>
+                    );
+                  })()}
+                </View>
+
+                {/* Informations principales du service */}
+                <View style={[styles.serviceDetailMainInfo, isDarkMode && styles.serviceDetailMainInfoDark]}>
+                  <Text style={[styles.serviceDetailTitle, isDarkMode && styles.serviceDetailTitleDark]}>
+                    {selectedService.name}
+                  </Text>
+                  
+                  <Text style={[styles.serviceDetailDescription, isDarkMode && styles.serviceDetailDescriptionDark]}>
+                    {selectedService.description}
+                  </Text>
+
+                  {/* Prix et durée avec design amélioré */}
+                  <View style={styles.serviceDetailMeta}>
+                    <View style={[styles.serviceDetailMetaCard, isDarkMode && styles.serviceDetailMetaCardDark]}>
+                      <View style={styles.serviceDetailMetaIcon}>
+                        <Ionicons name="pricetag" size={24} color="#10b981" />
+                      </View>
+                      <View style={styles.serviceDetailMetaContent}>
+                        <Text style={[styles.serviceDetailMetaLabel, isDarkMode && styles.serviceDetailMetaLabelDark]}>
+                          Prix
+                        </Text>
+                        <Text style={[styles.serviceDetailPrice, isDarkMode && styles.serviceDetailPriceDark]}>
+                          {formatPrice(selectedService.price)}
+                        </Text>
+                      </View>
+                    </View>
+                    
+                    <View style={[styles.serviceDetailMetaCard, isDarkMode && styles.serviceDetailMetaCardDark]}>
+                      <View style={styles.serviceDetailMetaIcon}>
+                        <Ionicons name="time" size={24} color="#3b82f6" />
+                      </View>
+                      <View style={styles.serviceDetailMetaContent}>
+                        <Text style={[styles.serviceDetailMetaLabel, isDarkMode && styles.serviceDetailMetaLabelDark]}>
+                          Durée
+                        </Text>
+                        <Text style={[styles.serviceDetailDuration, isDarkMode && styles.serviceDetailDurationDark]}>
+                          {formatDuration(selectedService.duration)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {selectedService.categoryName && (
+                      <View style={[styles.serviceDetailMetaCard, isDarkMode && styles.serviceDetailMetaCardDark]}>
+                        <View style={styles.serviceDetailMetaIcon}>
+                          <Ionicons name="folder" size={24} color="#f59e0b" />
+                        </View>
+                        <View style={styles.serviceDetailMetaContent}>
+                          <Text style={[styles.serviceDetailMetaLabel, isDarkMode && styles.serviceDetailMetaLabelDark]}>
+                            Catégorie
+                          </Text>
+                          <Text style={[styles.serviceDetailCategory, isDarkMode && styles.serviceDetailCategoryDark]}>
+                            {selectedService.categoryName}
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                </View>
+
+                {/* Section Conditions de réservation */}
+                <View style={[styles.serviceDetailSection, isDarkMode && styles.serviceDetailSectionDark]}>
+                  <View style={[styles.serviceDetailSectionHeader, isDarkMode && styles.serviceDetailSectionHeaderDark]}>
+                    <Ionicons name="document-text" size={24} color={isDarkMode ? "#f59e0b" : "#d97706"} />
+                    <Text style={[styles.serviceDetailSectionTitle, isDarkMode && styles.serviceDetailSectionTitleDark]}>
+                      Conditions de réservation
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.serviceDetailSectionContent}>
+                    <View style={styles.conditionItem}>
+                      <Ionicons name="checkmark-circle" size={16} color={isDarkMode ? "#34d399" : "#059669"} />
+                      <Text style={[styles.conditionText, isDarkMode && styles.conditionTextDark]}>
+                        Réservation obligatoire à l'avance
                       </Text>
                     </View>
+                    
+                    <View style={styles.conditionItem}>
+                      <Ionicons name="checkmark-circle" size={16} color={isDarkMode ? "#34d399" : "#059669"} />
+                      <Text style={[styles.conditionText, isDarkMode && styles.conditionTextDark]}>
+                        Annulation possible jusqu'à 24h avant le rendez-vous
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.conditionItem}>
+                      <Ionicons name="checkmark-circle" size={16} color={isDarkMode ? "#34d399" : "#059669"} />
+                      <Text style={[styles.conditionText, isDarkMode && styles.conditionTextDark]}>
+                        Paiement sur place ou en ligne
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.conditionItem}>
+                      <Ionicons name="checkmark-circle" size={16} color={isDarkMode ? "#34d399" : "#059669"} />
+                      <Text style={[styles.conditionText, isDarkMode && styles.conditionTextDark]}>
+                        Arrivée 5 minutes avant l'heure prévue
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.conditionItem}>
+                      <Ionicons name="information-circle" size={16} color={isDarkMode ? "#60a5fa" : "#3498db"} />
+                      <Text style={[styles.conditionText, isDarkMode && styles.conditionTextDark]}>
+                        En cas de retard, la prestation pourra être écourtée
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Bouton de réservation amélioré */}
+                <View style={[styles.serviceDetailActions, isDarkMode && styles.serviceDetailActionsDark]}>
+                  <TouchableOpacity 
+                    style={[styles.bookButton, isDarkMode && styles.bookButtonDark]}
+                    onPress={() => {
+                      // TODO: Ajouter la logique de réservation plus tard
+                      console.log('Réserver le service:', selectedService.name);
+                      closeServiceModal();
+                    }}
+                  >
+                    <View style={styles.bookButtonContent}>
+                      <Ionicons name="calendar" size={20} color="#ffffff" style={styles.bookButtonIcon} />
+                      <Text style={styles.bookButtonText}>Réserver ce service</Text>
+                    </View>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={[styles.contactButton, isDarkMode && styles.contactButtonDark]}
+                    onPress={() => {
+                      console.log('Redirection vers messagerie pour le service:', selectedService.name);
+                      closeServiceModal();
+                      // Redirection vers l'onglet Messagerie
+                      navigation.navigate('MessagingTab' as never);
+                    }}
+                  >
+                    <View style={styles.contactButtonContent}>
+                      <Ionicons name="chatbubble" size={18} color={isDarkMode ? "#60a5fa" : "#3b82f6"} style={styles.contactButtonIcon} />
+                      <Text style={[styles.contactButtonText, isDarkMode && styles.contactButtonTextDark]}>
+                        Poser une question
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </View>
+          )}
+        </SafeAreaView>
+      </Modal>
+      
+      {/* Modal de création de service avec système d'étapes */}
+      <Modal
+        visible={showCreateServiceModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={closeCreateServiceModal}
+      >
+        <View style={[styles.modalOverlay, isDarkMode && styles.modalOverlayDark]}>
+          <SafeAreaView style={[styles.modalContainer, isDarkMode && styles.modalContainerDark]}>
+            <KeyboardAvoidingView 
+              style={{ flex: 1 }}
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+            >
+              <View style={[styles.modalHeader, isDarkMode && styles.modalHeaderDark]}>
+                <Text style={[styles.modalHeaderTitle, isDarkMode && styles.modalHeaderTitleDark]}>
+                  {showRecap ? 'Récapitulatif' : 
+                   showImageOptions ? 'Ajouter une photo' :
+                   `Étape ${createServiceStep}/5`}
+                </Text>
+                <TouchableOpacity onPress={closeCreateServiceModal} style={styles.closeButton}>
+                  <Ionicons name="close" size={24} color={isDarkMode ? "#fff" : "#333"} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Barre de progression */}
+              {!showRecap && !showImageOptions && (
+                <View style={[styles.progressContainer, isDarkMode && styles.progressContainerDark]}>
+                  <View style={[styles.progressBar, isDarkMode && styles.progressBarDark]}>
+                    <View 
+                      style={[
+                        styles.progressFill, 
+                        { width: `${(createServiceStep / 5) * 100}%` }
+                      ]} 
+                    />
+                  </View>
+                  <Text style={[styles.progressText, isDarkMode && styles.progressTextDark]}>
+                    {createServiceStep}/5
+                  </Text>
+                </View>
+              )}
+
+            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+              {/* Récapitulatif */}
+              {showRecap ? (
+                <View style={styles.recapContainer}>
+                  <Text style={[styles.recapTitle, isDarkMode && styles.recapTitleDark]}>
+                    Votre nouveau service
+                  </Text>
+                  
+                  {/* Image preview */}
+                  {newService.image && (
+                    <View style={styles.recapImageContainer}>
+                      <Image 
+                        source={{ uri: newService.image.uri }} 
+                        style={styles.recapImage}
+                        resizeMode="cover"
+                      />
+                    </View>
+                  )}
+                  
+                  {/* Informations */}
+                  <View style={styles.recapFields}>
                     <TouchableOpacity 
-                      style={styles.bookButton}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        handleBookService(item);
-                      }}
+                      style={[styles.recapField, isDarkMode && styles.recapFieldDark]}
+                      onPress={() => editField('name')}
                     >
-                      <Text style={styles.bookButtonText}>Réserver</Text>
+                      <View style={styles.recapFieldContent}>
+                        <Text style={[styles.recapFieldLabel, isDarkMode && styles.recapFieldLabelDark]}>Nom</Text>
+                        <Text style={[styles.recapFieldValue, isDarkMode && styles.recapFieldValueDark]}>{newService.name}</Text>
+                      </View>
+                      <Ionicons name="create-outline" size={20} color="#4F8EF7" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      style={[styles.recapField, isDarkMode && styles.recapFieldDark]}
+                      onPress={() => editField('description')}
+                    >
+                      <View style={styles.recapFieldContent}>
+                        <Text style={[styles.recapFieldLabel, isDarkMode && styles.recapFieldLabelDark]}>Description</Text>
+                        <Text style={[styles.recapFieldValue, isDarkMode && styles.recapFieldValueDark]}>
+                          {newService.description || 'Aucune description'}
+                        </Text>
+                      </View>
+                      <Ionicons name="create-outline" size={20} color="#4F8EF7" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      style={[styles.recapField, isDarkMode && styles.recapFieldDark]}
+                      onPress={() => editField('price')}
+                    >
+                      <View style={styles.recapFieldContent}>
+                        <Text style={[styles.recapFieldLabel, isDarkMode && styles.recapFieldLabelDark]}>Prix</Text>
+                        <Text style={[styles.recapFieldValue, isDarkMode && styles.recapFieldValueDark]}>{newService.price}€</Text>
+                      </View>
+                      <Ionicons name="create-outline" size={20} color="#4F8EF7" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      style={[styles.recapField, isDarkMode && styles.recapFieldDark]}
+                      onPress={() => editField('duration')}
+                    >
+                      <View style={styles.recapFieldContent}>
+                        <Text style={[styles.recapFieldLabel, isDarkMode && styles.recapFieldLabelDark]}>Durée</Text>
+                        <Text style={[styles.recapFieldValue, isDarkMode && styles.recapFieldValueDark]}>{newService.duration} min</Text>
+                      </View>
+                      <Ionicons name="create-outline" size={20} color="#4F8EF7" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      style={[styles.recapField, isDarkMode && styles.recapFieldDark]}
+                      onPress={() => editField('categoryId')}
+                    >
+                      <View style={styles.recapFieldContent}>
+                        <Text style={[styles.recapFieldLabel, isDarkMode && styles.recapFieldLabelDark]}>Catégorie</Text>
+                        <Text style={[styles.recapFieldValue, isDarkMode && styles.recapFieldValueDark]}>
+                          {categories.find(c => c.id === newService.categoryId)?.name}
+                        </Text>
+                      </View>
+                      <Ionicons name="create-outline" size={20} color="#4F8EF7" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Actions finales */}
+                  <View style={styles.finalActions}>
+                    <TouchableOpacity
+                      style={[styles.finalActionButton, styles.cancelButton, isDarkMode && styles.cancelButtonDark]}
+                      onPress={closeCreateServiceModal}
+                    >
+                      <Text style={[styles.finalActionButtonText, styles.cancelButtonText]}>
+                        Annuler
+                      </Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={[styles.finalActionButton, styles.validateButton, createServiceLoading && styles.validateButtonDisabled]}
+                      onPress={createService}
+                      disabled={createServiceLoading}
+                    >
+                      <Text style={[styles.finalActionButtonText, styles.validateButtonText]}>
+                        {createServiceLoading ? 'Création...' : 'Valider'}
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 </View>
-              </TouchableOpacity>
-            ) : null
-          )}
-        </View>
-      </ScrollView>
-
-      {/* Modal de calendrier */}
-      <Modal
-        visible={showCalendarModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowCalendarModal(false)}
-      >
-        <View style={[styles.modalOverlay, isDarkMode && styles.modalOverlayDark]}>
-          <View style={[styles.calendarModalContent, isDarkMode && styles.calendarModalContentDark]}>
-            <Text style={[styles.modalTitle, isDarkMode && styles.modalTitleDark]}>Choisir une date</Text>
-
-            {/* En-tête du calendrier */}
-            <View style={[styles.calendarHeader, isDarkMode && styles.calendarHeaderDark]}>
-              <TouchableOpacity 
-                onPress={() => navigateCalendar('prev')} 
-                style={styles.navButton}
-              >
-                <Ionicons name="chevron-back-circle" size={24} color="#3498db" />
-              </TouchableOpacity>
-              
-              <Text style={styles.calendarTitle}>
-                {selectedDate.toLocaleDateString('fr-FR', { 
-                  month: 'long', 
-                  year: 'numeric' 
-                })}
-              </Text>
-              
-              <TouchableOpacity 
-                onPress={() => navigateCalendar('next')} 
-                style={styles.navButton}
-              >
-                <Ionicons name="chevron-forward-circle" size={24} color="#3498db" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Calendrier */}
-            <View style={[styles.calendarContainer, isDarkMode && styles.calendarContainerDark]}>
-              {/* En-tête des jours de la semaine */}
-              <View style={[styles.weekDaysHeader, isDarkMode && styles.weekDaysHeaderDark]}>
-                {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((dayName, index) => (
-                  <View key={`header-${index}`} style={styles.dayNameHeader}>
-                    <Text style={[styles.dayNameText, isDarkMode && styles.dayNameTextDark]}>{dayName}</Text>
-                  </View>
-                ))}
-              </View>
-              
-              {/* Grille des jours */}
-              <View style={styles.monthGrid}>
-                {(() => {
-                  const days = generateCalendarDays(selectedDate);
-                  const weeks = [];
-                  for (let i = 0; i < days.length; i += 7) {
-                    weeks.push(days.slice(i, i + 7));
-                  }
+              ) : showImageOptions ? (
+                /* Options d'image */
+                <View style={styles.imageOptionsContainer}>
+                  <Text style={[styles.imageOptionsTitle, isDarkMode && styles.imageOptionsTitleDark]}>
+                    Souhaitez-vous ajouter une photo ?
+                  </Text>
                   
-                  return weeks.map((week, weekIndex) => (
-                    <View key={`week-${weekIndex}`} style={styles.weekRow}>
-                      {week.map((dayItem, dayIndex) => {
-                        if (dayItem === null) {
-                          return (
-                            <View 
-                              key={`empty-${weekIndex}-${dayIndex}`} 
-                              style={[styles.calendarDayButton, styles.emptyDay]} 
-                            />
-                          );
-                        }
-                        
-                        const isPast = dayItem < new Date(new Date().setHours(0, 0, 0, 0));
-                        const dayAppointments = getAppointmentsForDate(dayItem);
-                        
-                        return (
-                          <TouchableOpacity
-                            key={dayItem.toDateString()}
-                          style={[
-                              styles.calendarDayButton,
-                              isDarkMode && styles.calendarDayButtonDark,
-                              isToday(dayItem) && [styles.todayButton, isDarkMode && styles.todayButtonDark],
-                              dayItem.toDateString() === selectedDate.toDateString() && styles.dayButtonSelected,
-                              isPast && styles.pastDayButton
-                            ]}
-                            onPress={() => !isPast && handleDateSelect(dayItem)}
-                            disabled={isPast}
-                          >
-                            <Text style={[
-                              styles.calendarDayText,
-                              isDarkMode && styles.calendarDayTextDark,
-                              dayItem.toDateString() === selectedDate.toDateString() && styles.selectedDayText,
-                              isPast && [styles.pastDayText, isDarkMode && styles.pastDayTextDark]
-                            ]}>
-                              {dayItem.getDate()}
-                            </Text>
-                            {dayAppointments.length > 0 && (
-                              <View style={styles.appointmentIndicator}>
-                                <Text style={styles.appointmentIndicatorText}>
-                                  {`${dayAppointments.length} rdv`}
-                                </Text>
-                              </View>
-                            )}
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  ));
-                })()}
-              </View>
-            </View>
-
-            {/* Bouton fermer modernisé */}
-            <TouchableOpacity
-              style={[
-                styles.closeIconButton,
-                isDarkMode && styles.closeIconButtonDark
-              ]}
-              onPress={() => setShowCalendarModal(false)}
-              accessibilityLabel="Fermer le calendrier"
-            >
-              <Ionicons
-                name="close"
-                size={24}
-                color={isDarkMode ? '#F3F4F6' : '#333'}
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Modal de réservation */}
-      <Modal
-        visible={showBookingModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowBookingModal(false)}
-      >
-        <View style={[
-          styles.modalOverlay,
-          isDarkMode && styles.modalOverlayDark,
-          isDarkMode && { borderColor: '#374151', borderWidth: 1 }
-        ]}>
-          <View style={[
-            styles.modalContent,
-            isDarkMode && styles.modalContentDark,
-            isDarkMode && { borderColor: '#374151', borderWidth: 1, shadowColor: '#000', shadowOpacity: 0.7, shadowRadius: 12 }
-          ]}>
-            <Text style={[styles.modalTitle, isDarkMode && styles.modalTitleDark]}>Choisir un créneau</Text>
-            
-            {selectedService && (
-              <View style={styles.serviceInfoModal}>
-                <Text style={styles.serviceNameModal}>{selectedService.name || 'Prestation sélectionnée'}</Text>
-                <Text style={styles.servicePriceModal}>{selectedService.price || 0}€ • {selectedService.duration || 0} min</Text>
-                <Text style={styles.serviceDescModal}>{selectedService.description || 'Description du service'}</Text>
-              </View>
-            )}
-
-            {/* Date sélectionnée */}
-            <View style={styles.selectedDateSection}>
-              <Text style={styles.sectionLabel}>Date sélectionnée</Text>
-              <TouchableOpacity 
-                style={styles.selectedDateDisplay}
-                onPress={() => {
-                  setShowBookingModal(false);
-                  setShowCalendarModal(true);
-                }}
-              >
-                <Ionicons name="calendar-outline" size={20} color="#3498db" />
-                <Text style={styles.selectedDateDisplayText}>
-                  {selectedDate.toLocaleDateString('fr-FR', { 
-                    weekday: 'long', 
-                    day: 'numeric', 
-                    month: 'long' 
-                  })}
-                </Text>
-                <Ionicons name="pencil-outline" size={16} color="#3498db" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Contenu scrollable */}
-            <ScrollView style={styles.modalScrollableContent} showsVerticalScrollIndicator={false}>
-
-            {/* Affichage des rendez-vous du jour sélectionné */}
-            {(() => {
-              const dayAppointments = getAppointmentsForDate(selectedDate);
-              if (dayAppointments.length > 0) {
-                return (
-                  <View style={styles.appointmentsSection}>
-                    <Text style={styles.sectionLabel}>
-                      Rendez-vous du {selectedDate.toLocaleDateString('fr-FR', { 
-                        weekday: 'long', 
-                        day: 'numeric', 
-                        month: 'long' 
-                      })}
+                  <TouchableOpacity
+                    style={[styles.imageOptionButton, isDarkMode && styles.imageOptionButtonDark]}
+                    onPress={launchCamera}
+                  >
+                    <Ionicons name="camera" size={32} color="#4F8EF7" />
+                    <Text style={[styles.imageOptionText, isDarkMode && styles.imageOptionTextDark]}>
+                      Prendre une photo
                     </Text>
-                    <View style={styles.appointmentSimpleView}>
-                      <View style={styles.appointmentSimpleInfo}>
-                        <Ionicons name="calendar" size={20} color="#3498db" />
-                        <Text style={styles.appointmentSimpleText}>
-                          {dayAppointments.length === 1 ? 'Un rendez-vous' : `${dayAppointments.length} rendez-vous`}
-                        </Text>
-                      </View>
-                      <TouchableOpacity 
-                        style={styles.viewMoreButton}
-                        onPress={() => {
-                          setShowBookingModal(false);
-                          navigation.navigate('AppointmentsTab' as never);
-                        }}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.imageOptionButton, isDarkMode && styles.imageOptionButtonDark]}
+                    onPress={() => handleImagePicker('gallery')}
+                  >
+                    <Ionicons name="images" size={32} color="#4F8EF7" />
+                    <Text style={[styles.imageOptionText, isDarkMode && styles.imageOptionTextDark]}>
+                      Choisir depuis la galerie
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.skipImageButton, isDarkMode && styles.skipImageButtonDark]}
+                    onPress={skipImage}
+                  >
+                    <Text style={[styles.skipImageText, isDarkMode && styles.skipImageTextDark]}>
+                      Passer cette étape
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                /* Étapes du formulaire */
+                <View style={styles.stepsContainer}>
+                  {/* Debug info */}
+                  <Text style={{color: isDarkMode ? '#fff' : '#000', fontSize: 12, textAlign: 'center', marginBottom: 10}}>
+                    Étape actuelle: {createServiceStep}/5
+                  </Text>
+                  
+                  {/* Étape 1: Nom */}
+                  {createServiceStep === 1 && (
+                    <View style={styles.stepContainer}>
+                      <Text style={[styles.stepTitle, isDarkMode && styles.stepTitleDark]}>
+                        Nom du service
+                      </Text>
+                      <Text style={[styles.stepDescription, isDarkMode && styles.stepDescriptionDark]}>
+                        Donnez un nom clair et descriptif à votre service
+                      </Text>
+                      <TextInput
+                        style={[styles.stepInput, isDarkMode && styles.stepInputDark]}
+                        placeholder="Ex: Coupe cheveux femme"
+                        placeholderTextColor={isDarkMode ? "#9CA3AF" : "#999"}
+                        value={newService.name}
+                        onChangeText={(text) => setNewService(prev => ({...prev, name: text}))}
+                        autoFocus
+                      />
+                      <TouchableOpacity
+                        style={[styles.nextButtonCompact, !newService.name.trim() && styles.nextButtonDisabled]}
+                        onPress={nextStep}
+                        disabled={!newService.name.trim()}
                       >
-                        <Text style={styles.viewMoreButtonText}>Voir plus</Text>
-                        <Ionicons name="chevron-forward" size={16} color="#3498db" />
+                        <Text style={styles.nextButtonText}>Suivant</Text>
+                        <Ionicons name="arrow-forward" size={18} color="#fff" />
                       </TouchableOpacity>
                     </View>
-                  </View>
-                );
-              }
-              return null;
-            })()}
+                  )}
 
-            {/* Sélection de l'heure - Section améliorée */}
-            <Animated.View 
-              style={[
-                styles.timeSection,
-                {
-                  opacity: timeSectionOpacity,
-                  transform: [{ scale: timeSectionScale }]
-                }
-              ]}
-            >
-              <View style={styles.timeSectionHeader}>
-                <Ionicons name="time-outline" size={22} color="#3498db" />
-                <Text style={styles.sectionLabelEnhanced}>Choisissez votre horaire</Text>
-              </View>
-              
-              {/* Indicateur de progression */}
-              <View style={styles.progressIndicator}>
-                <View style={styles.progressStep}>
-                  <View style={[styles.progressDot, styles.progressDotCompleted]}>
-                    <Ionicons name="checkmark" size={12} color="#fff" />
-                  </View>
-                  <Text style={styles.progressStepText}>Service</Text>
-                </View>
-                <View style={styles.progressLine}></View>
-                <View style={styles.progressStep}>
-                  <View style={[styles.progressDot, styles.progressDotCompleted]}>
-                    <Ionicons name="checkmark" size={12} color="#fff" />
-                  </View>
-                  <Text style={styles.progressStepText}>Date</Text>
-                </View>
-                <View style={styles.progressLine}></View>
-                <View style={styles.progressStep}>
-                  <View style={[styles.progressDot, selectedTime ? styles.progressDotCompleted : styles.progressDotActive]}>
-                    {selectedTime ? (
-                      <Ionicons name="checkmark" size={12} color="#fff" />
-                    ) : (
-                      <Text style={styles.progressDotNumber}>3</Text>
-                    )}
-                  </View>
-                  <Text style={styles.progressStepText}>Heure</Text>
-                </View>
-              </View>
-              
-              {/* Indication de l'heure sélectionnée */}
-              {selectedTime && (
-                <Animated.View 
-                  style={[
-                    styles.selectedTimeIndicator,
-                    {
-                      transform: [{ scale: selectedTimeAnimation }]
-                    }
-                  ]}
-                >
-                  <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                  <Text style={styles.selectedTimeText}>
-                    Créneau confirmé : {selectedTime}
-                  </Text>
-                  <TouchableOpacity 
-                    style={styles.changeTimeButton}
-                    onPress={() => setSelectedTime('')}
-                  >
-                    <Text style={styles.changeTimeText}>Modifier</Text>
-                  </TouchableOpacity>
-                </Animated.View>
-              )}
-              
-              {/* Instructions pour l'utilisateur */}
-              {!selectedTime ? (
-                <View style={styles.instructionsBox}>
-                  <Ionicons name="information-circle-outline" size={16} color="#3498db" />
-                  <Text style={styles.instructionsText}>
-                    Sélectionnez un créneau horaire disponible pour continuer
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.successBox}>
-                  <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                  <Text style={styles.successText}>
-                    Parfait ! Vous pouvez maintenant confirmer votre réservation
-                  </Text>
-                </View>
-              )}
-              
-              {loadingSlots ? (
-                <View style={styles.loadingContainer}>
-                  <Ionicons name="time-outline" size={24} color="#3498db" />
-                  <Text style={styles.loadingText}>Vérification des créneaux disponibles...</Text>
-                  <Text style={styles.loadingSubtext}>
-                    Nous vérifions les disponibilités pour {selectedDate.toLocaleDateString('fr-FR', { 
-                      weekday: 'long', 
-                      day: 'numeric', 
-                      month: 'long' 
-                    })}
-                  </Text>
-                </View>
-              ) : (
-                <>
-                  {(() => {
-                    const totalSlots = availableSlots.length > 0 ? availableSlots : getDefaultTimeSlots();
-                    
-                    return null; // Just for the logic, no visual output needed
-                  })()}
-                  
-                  {/* Créneaux du matin - Section améliorée */}
-                  <View style={styles.timePeriodSection}>
-                    <View style={styles.timePeriodHeader}>
-                      <Ionicons name="sunny-outline" size={20} color="#f39c12" />
-                      <Text style={styles.timePeriodTitle}>Matinée (9h - 12h)</Text>
-                      <View style={styles.periodBadge}>
-                        <Text style={styles.periodBadgeText}>
-                          {(availableSlots.length > 0 ? availableSlots : getDefaultTimeSlots())
-                            .filter((slot: any) => {
-                              const hour = parseInt(slot.time.split(':')[0]);
-                              return hour >= 9 && hour < 12 && slot.available;
-                            }).length} dispos
-                        </Text>
+                  {/* Étape 2: Description */}
+                  {createServiceStep === 2 && (
+                    <View style={styles.stepContainer}>
+                      <Text style={[styles.stepTitle, isDarkMode && styles.stepTitleDark]}>
+                        Description
+                      </Text>
+                      <Text style={[styles.stepDescription, isDarkMode && styles.stepDescriptionDark]}>
+                        Décrivez votre service en détail (optionnel)
+                      </Text>
+                      <TextInput
+                        style={[styles.stepInput, styles.stepTextArea, isDarkMode && styles.stepInputDark]}
+                        placeholder="Description détaillée du service..."
+                        placeholderTextColor={isDarkMode ? "#9CA3AF" : "#999"}
+                        value={newService.description}
+                        onChangeText={(text) => setNewService(prev => ({...prev, description: text}))}
+                        multiline
+                        numberOfLines={4}
+                        autoFocus
+                      />
+                      <View style={styles.stepActions}>
+                        <TouchableOpacity style={[styles.prevButtonCompact, isDarkMode && styles.prevButtonDark]} onPress={prevStep}>
+                          <Ionicons name="arrow-back" size={18} color={isDarkMode ? "#60A5FA" : "#4F8EF7"} />
+                          <Text style={[styles.prevButtonText, isDarkMode && styles.prevButtonTextDark]}>Précédent</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.nextButtonCompact} onPress={nextStep}>
+                          <Text style={styles.nextButtonText}>Suivant</Text>
+                          <Ionicons name="arrow-forward" size={18} color="#fff" />
+                        </TouchableOpacity>
                       </View>
                     </View>
-                    <View style={styles.timeButtonsContainer}>
-                      {(availableSlots.length > 0 ? availableSlots : getDefaultTimeSlots())
-                        .filter((slot: any) => {
-                          const hour = parseInt(slot.time.split(':')[0]);
-                          return hour >= 9 && hour < 12;
-                        })
-                        .map((slot: any, index: number) => {
-                          return (
-                            <TouchableOpacity
-                              key={`morning-${index}`}
-                              style={[
-                                styles.timeButton,
-                                selectedTime === slot.time && styles.timeButtonSelected,
-                                !slot.available && styles.timeButtonDisabled
-                              ]}
-                              onPress={() => {
-                                if (slot.available) {
-                                  setSelectedTime(slot.time);
-                                  
-                                  // Animation de confirmation
-                                  Animated.sequence([
-                                    Animated.timing(selectedTimeAnimation, {
-                                      toValue: 1.1,
-                                      duration: 150,
-                                      useNativeDriver: true,
-                                    }),
-                                    Animated.timing(selectedTimeAnimation, {
-                                      toValue: 1,
-                                      duration: 150,
-                                      useNativeDriver: true,
-                                    })
-                                  ]).start();
-                                }
-                              }}
-                              disabled={!slot.available}
-                            >
-                              <Text style={[
-                                styles.timeButtonText,
-                                selectedTime === slot.time && styles.timeButtonTextSelected,
-                                !slot.available && styles.timeButtonTextDisabled
-                              ]}>
-                                {slot.time}
-                              </Text>
-                              {selectedTime === slot.time && (
-                                <Ionicons name="checkmark-circle" size={14} color="#fff" style={styles.timeButtonCheck} />
-                              )}
-                            </TouchableOpacity>
-                          );
-                        })}
-                    </View>
-                  </View>
+                  )}
 
-                  {/* Créneaux de l'après-midi - Section améliorée */}
-                  <View style={styles.timePeriodSection}>
-                    <View style={styles.timePeriodHeader}>
-                      <Ionicons name="partly-sunny-outline" size={20} color="#e67e22" />
-                      <Text style={styles.timePeriodTitle}>Après-midi (14h - 17h)</Text>
-                      <View style={styles.periodBadge}>
-                        <Text style={styles.periodBadgeText}>
-                          {(availableSlots.length > 0 ? availableSlots : getDefaultTimeSlots())
-                            .filter((slot: any) => {
-                              const hour = parseInt(slot.time.split(':')[0]);
-                              return hour >= 14 && hour < 17 && slot.available;
-                            }).length} dispos
-                        </Text>
+                  {/* Étape 3: Prix */}
+                  {createServiceStep === 3 && (
+                    <View style={styles.stepContainer}>
+                      <Text style={[styles.stepTitle, isDarkMode && styles.stepTitleDark]}>
+                        Prix du service
+                      </Text>
+                      <Text style={[styles.stepDescription, isDarkMode && styles.stepDescriptionDark]}>
+                        Fixez le prix de votre service en euros
+                      </Text>
+                      <View style={styles.priceInputContainer}>
+                        <TextInput
+                          style={[styles.stepInput, styles.priceInput, isDarkMode && styles.stepInputDark]}
+                          placeholder="25.50"
+                          placeholderTextColor={isDarkMode ? "#9CA3AF" : "#999"}
+                          value={newService.price}
+                          onChangeText={(text) => setNewService(prev => ({...prev, price: text}))}
+                          keyboardType="decimal-pad"
+                          autoFocus
+                        />
+                        <Text style={[styles.priceSymbol, isDarkMode && styles.priceSymbolDark]}>€</Text>
+                      </View>
+                      <View style={styles.stepActions}>
+                        <TouchableOpacity style={[styles.prevButtonCompact, isDarkMode && styles.prevButtonDark]} onPress={prevStep}>
+                          <Ionicons name="arrow-back" size={18} color={isDarkMode ? "#60A5FA" : "#4F8EF7"} />
+                          <Text style={[styles.prevButtonText, isDarkMode && styles.prevButtonTextDark]}>Précédent</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.nextButtonCompact, !newService.price && styles.nextButtonDisabled]}
+                          onPress={nextStep}
+                          disabled={!newService.price}
+                        >
+                          <Text style={styles.nextButtonText}>Suivant</Text>
+                          <Ionicons name="arrow-forward" size={18} color="#fff" />
+                        </TouchableOpacity>
                       </View>
                     </View>
-                    <View style={styles.timeButtonsContainer}>
-                      {(availableSlots.length > 0 ? availableSlots : getDefaultTimeSlots())
-                        .filter((slot: any) => {
-                          const hour = parseInt(slot.time.split(':')[0]);
-                          return hour >= 14 && hour < 17;
-                        })
-                        .map((slot: any, index: number) => {
-                          return (
-                            <TouchableOpacity
-                              key={`afternoon-${index}`}
-                              style={[
-                                styles.timeButton,
-                                selectedTime === slot.time && styles.timeButtonSelected,
-                                !slot.available && styles.timeButtonDisabled
-                              ]}
-                              onPress={() => {
-                                if (slot.available) {
-                                  setSelectedTime(slot.time);
-                                  
-                                  // Animation de confirmation
-                                  Animated.sequence([
-                                    Animated.timing(selectedTimeAnimation, {
-                                      toValue: 1.1,
-                                      duration: 150,
-                                      useNativeDriver: true,
-                                    }),
-                                    Animated.timing(selectedTimeAnimation, {
-                                      toValue: 1,
-                                      duration: 150,
-                                      useNativeDriver: true,
-                                    })
-                                  ]).start();
-                                }
-                              }}
-                              disabled={!slot.available}
-                            >
-                              <Text style={[
-                                styles.timeButtonText,
-                                selectedTime === slot.time && styles.timeButtonTextSelected,
-                                !slot.available && styles.timeButtonTextDisabled
-                              ]}>
-                                {slot.time}
-                              </Text>
-                              {selectedTime === slot.time && (
-                                <Ionicons name="checkmark-circle" size={14} color="#fff" style={styles.timeButtonCheck} />
-                              )}
-                            </TouchableOpacity>
-                          );
-                        })}
-                    </View>
-                  </View>
-                </>
-              )}
-            </Animated.View>
+                  )}
 
-            {/* Section Notes */}
-            <View style={styles.notesSection}>
-              <Text style={styles.sectionLabel}>Notes (optionnel)</Text>
-              <TextInput
-                style={styles.notesInput}
-                placeholder="Ajoutez une note pour votre rendez-vous..."
-                value={clientNotes}
-                onChangeText={setClientNotes}
-                multiline
-                numberOfLines={3}
-                maxLength={200}
-                textAlignVertical="top"
-              />
-              <Text style={styles.notesCounter}>
-                {clientNotes.length}/200 caractères
-              </Text>
-            </View>
+                  {/* Étape 4: Durée */}
+                  {createServiceStep === 4 && (
+                    <View style={styles.stepContainer}>
+                      <Text style={[styles.stepTitle, isDarkMode && styles.stepTitleDark]}>
+                        Durée du service
+                      </Text>
+                      <Text style={[styles.stepDescription, isDarkMode && styles.stepDescriptionDark]}>
+                        Combien de temps dure votre service (en minutes)
+                      </Text>
+                      <View style={styles.durationInputContainer}>
+                        <TextInput
+                          style={[styles.stepInput, styles.durationInput, isDarkMode && styles.stepInputDark]}
+                          placeholder="30"
+                          placeholderTextColor={isDarkMode ? "#9CA3AF" : "#999"}
+                          value={newService.duration}
+                          onChangeText={(text) => setNewService(prev => ({...prev, duration: text}))}
+                          keyboardType="number-pad"
+                          autoFocus
+                        />
+                        <Text style={[styles.durationSymbol, isDarkMode && styles.durationSymbolDark]}>min</Text>
+                      </View>
+                      <View style={styles.stepActions}>
+                        <TouchableOpacity style={[styles.prevButtonCompact, isDarkMode && styles.prevButtonDark]} onPress={prevStep}>
+                          <Ionicons name="arrow-back" size={18} color={isDarkMode ? "#60A5FA" : "#4F8EF7"} />
+                          <Text style={[styles.prevButtonText, isDarkMode && styles.prevButtonTextDark]}>Précédent</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.nextButtonCompact, !newService.duration && styles.nextButtonDisabled]}
+                          onPress={nextStep}
+                          disabled={!newService.duration}
+                        >
+                          <Text style={styles.nextButtonText}>Suivant</Text>
+                          <Ionicons name="arrow-forward" size={18} color="#fff" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Étape 5: Catégorie */}
+                  {createServiceStep === 5 && (
+                    <View style={styles.stepContainer}>
+                      <Text style={[styles.stepTitle, isDarkMode && styles.stepTitleDark]}>
+                        Catégorie
+                      </Text>
+                      <Text style={[styles.stepDescription, isDarkMode && styles.stepDescriptionDark]}>
+                        Choisissez la catégorie de votre service
+                      </Text>
+                      <View style={styles.categoryStepSelector}>
+                        {categories.filter(cat => cat.id !== 'all').map((category) => (
+                          <TouchableOpacity
+                            key={category.id}
+                            style={[
+                              styles.categoryStepOption,
+                              isDarkMode && styles.categoryStepOptionDark,
+                              newService.categoryId === category.id && styles.categoryStepOptionSelected
+                            ]}
+                            onPress={() => setNewService(prev => ({...prev, categoryId: category.id}))}
+                          >
+                            <Text style={[
+                              styles.categoryStepOptionText,
+                              isDarkMode && styles.categoryStepOptionTextDark,
+                              newService.categoryId === category.id && styles.categoryStepOptionTextSelected
+                            ]}>
+                              {category.name}
+                            </Text>
+                            {newService.categoryId === category.id && (
+                              <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                      <View style={styles.stepActions}>
+                        <TouchableOpacity style={[styles.prevButtonCompact, isDarkMode && styles.prevButtonDark]} onPress={prevStep}>
+                          <Ionicons name="arrow-back" size={18} color={isDarkMode ? "#60A5FA" : "#4F8EF7"} />
+                          <Text style={[styles.prevButtonText, isDarkMode && styles.prevButtonTextDark]}>Précédent</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.nextButtonCompact, !newService.categoryId && styles.nextButtonDisabled]}
+                          onPress={proceedToImageChoice}
+                          disabled={!newService.categoryId}
+                        >
+                          <Text style={styles.nextButtonText}>Continuer</Text>
+                          <Ionicons name="arrow-forward" size={18} color="#fff" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              )}
             </ScrollView>
-
-            {/* Résumé de la réservation */}
-            {selectedTime && (
-              <View style={styles.bookingSummary}>
-                <View style={styles.summaryHeader}>
-                  <Ionicons name="document-text-outline" size={20} color="#3498db" />
-                  <Text style={styles.summaryTitle}>Résumé de votre réservation</Text>
-                </View>
-                <View style={styles.summaryContent}>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Service :</Text>
-                    <Text style={styles.summaryValue}>{selectedService?.name}</Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Date :</Text>
-                    <Text style={styles.summaryValue}>
-                      {selectedDate.toLocaleDateString('fr-FR', { 
-                        weekday: 'long', 
-                        day: 'numeric', 
-                        month: 'long' 
-                      })}
-                    </Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Heure :</Text>
-                    <Text style={styles.summaryValue}>{selectedTime}</Text>
-                  </View>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Prix :</Text>
-                    <Text style={[styles.summaryValue, styles.summaryPrice]}>{selectedService?.price || 0}€</Text>
-                  </View>
-                </View>
-              </View>
-            )}
-
-            {/* Boutons d'action - en dehors du ScrollView */}
-            <View style={styles.modalActions}>
-              <TouchableOpacity 
-                style={styles.cancelButton}
-                onPress={() => {
-                  setShowBookingModal(false);
-                  setSelectedService(null);
-                  setClientNotes(''); // Réinitialiser les notes
-                }}
-              >
-                <Text style={styles.cancelButtonText}>Annuler</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.confirmButton}
-                onPress={() => {
-                  console.log('🎯 Tentative de confirmation de réservation');
-                  console.log('🕐 Heure sélectionnée:', selectedTime);
-                  console.log('📅 Date sélectionnée:', selectedDate);
-                  console.log('🔧 Prestation sélectionnée:', selectedService?.name);
-                  confirmBooking();
-                }}
-                disabled={isLoading || !selectedTime}
-              >
-                <Text style={styles.confirmButtonText}>
-                  {isLoading 
-                    ? 'Réservation...' 
-                    : selectedTime 
-                      ? `Confirmer pour ${selectedTime}` 
-                      : 'Sélectionnez une heure'
-                  }
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+            </KeyboardAvoidingView>
+          </SafeAreaView>
         </View>
       </Modal>
-
-      {/* Carte de détail de prestation */}
-      <PrestationDetailCard
-        prestation={selectedPrestation}
-        visible={showPrestationDetail}
-        onClose={() => setShowPrestationDetail(false)}
-        onBook={handleBookFromDetail}
-        isDarkMode={isDarkMode}
-      />
-      
-      </SafeAreaView>
-    </Animated.View>
+    </SafeAreaView>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  // Styles pour les filtres collapsibles (copiés d'AppointmentsScreen)
-  tabContainer: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+  container: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
   },
-  tabContainerDark: {
-    backgroundColor: '#1F2937',
+  containerDark: {
+    backgroundColor: '#111827',
+  },
+  header: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  headerDark: {
+    backgroundColor: '#1f2937',
     borderBottomColor: '#374151',
   },
-  tabWrapper: {
+  titleSection: {
+    flex: 1,
+  },
+  appName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#4F8EF7',
+  },
+  appNameDark: {
+    color: '#4F8EF7', // Garde la même couleur bleue en mode sombre
+  },
+  welcomeText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginTop: 10,
+  },
+  welcomeTextDark: {
+    color: '#ccc',
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+    fontStyle: 'italic',
+  },
+  headerSubtitleDark: {
+    color: '#9ca3af',
+  },
+  searchContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    backgroundColor: '#ffffff',
+  },
+  searchContainerDark: {
+    backgroundColor: '#1f2937',
+  },
+  screenTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1f2937',
+  },
+  screenTitleDark: {
+    color: '#f9fafb',
+  },
+  headerControls: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 12,
+  },
+  controlButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#f3f4f6',
+  },
+  controlButtonDark: {
+    backgroundColor: '#374151',
+  },
+  addServiceSection: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  addServiceSectionDark: {
+    // Pas de style spécifique nécessaire
+  },
+  addServiceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4F8EF7', // Bleu comme les autres boutons
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  addServiceButtonDark: {
+    backgroundColor: '#3B82F6', // Bleu plus foncé en mode sombre
+  },
+  addServiceIcon: {
+    marginRight: 8,
+  },
+  addServiceText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  searchInput: {
+    backgroundColor: '#f9fafb',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: '#1f2937',
+  },
+  searchInputDark: {
+    backgroundColor: '#374151',
+    color: '#f9fafb',
+  },
+  servicesCounter: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  servicesCounterDark: {
+    backgroundColor: '#374151',
   },
   servicesCount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  servicesCountDark: {
+    color: '#9ca3af',
+  },
+  filtersContainer: {
+    marginBottom: 8,
+  },
+  categoriesList: {
+    paddingVertical: 8,
+  },
+  categoryButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginRight: 8,
+    borderRadius: 20,
+    backgroundColor: '#f3f4f6',
+  },
+  categoryButtonDark: {
+    backgroundColor: '#374151',
+  },
+  categoryButtonActive: {
+    backgroundColor: '#3498db',
+  },
+  categoryButtonActiveDark: {
+    backgroundColor: '#60a5fa',
+  },
+  categoryButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6b7280',
+  },
+  categoryButtonTextDark: {
+    color: '#d1d5db',
+  },
+  categoryButtonTextActive: {
+    color: '#ffffff',
+  },
+  categoryButtonTextActiveDark: {
+    color: '#ffffff',
+  },
+  sortContainer: {
+    marginBottom: 8,
+  },
+  sortTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 8,
+  },
+  sortTitleDark: {
+    color: '#f9fafb',
+  },
+  sortOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  sortOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#f3f4f6',
+  },
+  sortOptionDark: {
+    backgroundColor: '#374151',
+  },
+  sortOptionActive: {
+    backgroundColor: '#3498db',
+  },
+  sortOptionActiveDark: {
+    backgroundColor: '#60a5fa',
+  },
+  sortOptionText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6b7280',
+  },
+  sortOptionTextDark: {
+    color: '#d1d5db',
+  },
+  sortOptionTextActive: {
+    color: '#ffffff',
+  },
+  servicesList: {
+    padding: 12, // Augmenté pour plus d'espacement
+    paddingBottom: 100, // Espace supplémentaire pour éviter que la barre de navigation cache le contenu
+  },
+  serviceRow: {
+    justifyContent: 'space-between',
+    marginBottom: 8, // Espacement entre les rangées
+    },
+    
+  serviceCardContainer: {
+    flex: 1,
+    marginHorizontal: 6, // Espace côté entre les cardes augmenté
+    marginBottom: 12, // Espacement ligne entre les cardes augmenté
+  },
+  serviceCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20, // Coins encore plus arrondis
+    flex: 1, // Prend toute la hauteur disponible
+    minHeight: 280, // Hauteur minimale augmentée
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  serviceCardDark: {
+    backgroundColor: '#1f2937',
+  },
+  serviceCardContent: {
+    padding: 12, // Padding augmenté
+    flex: 1,
+    justifyContent: 'space-between', // Répartit le contenu
+  },
+  serviceImageContainer: {
+    width: '100%',
+    height: 140, // Hauteur augmentée pour l'image
+    borderRadius: 16, // Plus arrondi
+    marginBottom: 12, // Espacement augmenté
+    overflow: 'hidden',
+  },
+  serviceImageContainerDark: {
+    backgroundColor: '#374151',
+  },
+  serviceImage: {
+    width: '100%',
+    height: '100%',
+  },
+  serviceImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#f3f4f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  serviceImagePlaceholderDark: {
+    backgroundColor: '#374151',
+  },
+  serviceInfo: {
+    flex: 1,
+    justifyContent: 'space-between', // Répartit le contenu verticalement
+  },
+  serviceTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 6, // Réduit pour des cards moins hautes
+    lineHeight: 20, // Ligne plus compacte
+    minHeight: 40, // Hauteur minimale réduite
+  },
+  serviceTitleDark: {
+    color: '#f9fafb',
+  },
+  serviceDescription: {
+    fontSize: 12, // Taille réduite
+    color: '#6b7280',
+    marginBottom: 8, // Marge réduite
+    lineHeight: 16, // Ligne plus compacte
+    minHeight: 32, // Hauteur minimale réduite
+    flex: 1,
+  },
+  serviceDescriptionDark: {
+    color: '#9ca3af',
+  },
+  serviceMeta: {
+    marginBottom: 4, // Marge réduite
+  },
+  servicePrice: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#059669',
+    marginBottom: 6,
+  },
+  servicePriceDark: {
+    color: '#34d399',
+  },
+  serviceDuration: {
+    fontSize: 12,
+    color: '#6b7280',
+    backgroundColor: '#f3f4f6',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  serviceDurationDark: {
+    color: '#d1d5db',
+    backgroundColor: '#374151',
+  },
+  serviceCategory: {
+    fontSize: 11,
+    color: '#3498db',
+    fontWeight: '500',
+    marginTop: 4,
+  },
+  serviceCategoryDark: {
+    color: '#60a5fa',
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 64,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#6b7280',
+    marginTop: 16,
+  },
+  emptyTextDark: {
+    color: '#9ca3af',
+  },
+  // Styles pour le modal de détail
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+  },
+  modalContainerDark: {
+    backgroundColor: '#111827',
+  },
+  modalContent: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    backgroundColor: '#ffffff',
+  },
+  modalHeaderDark: {
+    borderBottomColor: '#374151',
+    backgroundColor: '#1f2937',
+  },
+  modalHeaderContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flex: 1,
+  },
+  modalHeaderTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1f2937',
+  },
+  modalHeaderTitleDark: {
+    color: '#f9fafb',
+  },
+  closeButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#f3f4f6',
+  },
+  closeButtonDark: {
+    backgroundColor: '#374151',
+  },
+  modalScrollView: {
+    flex: 1,
+  },
+  serviceDetailImageContainer: {
+    width: '100%',
+    height: 250,
+    backgroundColor: '#f3f4f6',
+  },
+  serviceDetailImage: {
+    width: '100%',
+    height: '100%',
+  },
+  serviceDetailImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#f3f4f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  serviceDetailImagePlaceholderDark: {
+    backgroundColor: '#374151',
+  },
+  imagePlaceholderText: {
+    fontSize: 16,
+    color: '#6b7280',
+    fontWeight: '500',
+  },
+  imagePlaceholderTextDark: {
+    color: '#9ca3af',
+  },
+  serviceDetailMainInfo: {
+    padding: 20,
+    backgroundColor: '#ffffff',
+  },
+  serviceDetailMainInfoDark: {
+    backgroundColor: '#111827',
+  },
+  serviceDetailContainer: {
+    flexDirection: 'row',
+    padding: 16,
+    gap: 16,
+  },
+  serviceDetailInfo: {
+    flex: 1,
+    justifyContent: 'flex-start',
+  },
+  serviceDetailTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1f2937',
+    marginBottom: 16,
+    lineHeight: 36,
+  },
+  serviceDetailTitleDark: {
+    color: '#f9fafb',
+  },
+  serviceDetailDescription: {
+    fontSize: 16,
+    color: '#64748b',
+    lineHeight: 24,
+    marginBottom: 8,
+  },
+  serviceDetailDescriptionDark: {
+    color: '#94a3b8',
+  },
+  serviceDetailMeta: {
+    flexDirection: 'column',
+    gap: 16,
+    marginTop: 24,
+  },
+  serviceDetailMetaCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  serviceDetailMetaCardDark: {
+    backgroundColor: '#1f2937',
+    borderColor: '#374151',
+  },
+  serviceDetailMetaIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  serviceDetailMetaContent: {
+    flex: 1,
+  },
+  serviceDetailMetaLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#64748b',
+    marginBottom: 4,
+  },
+  serviceDetailMetaLabelDark: {
+    color: '#94a3b8',
+  },
+  serviceDetailMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  serviceDetailPrice: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  serviceDetailPriceDark: {
+    color: '#34d399',
+  },
+  serviceDetailDuration: {
+    fontSize: 16,
+    color: '#3498db',
+    fontWeight: '600',
+  },
+  serviceDetailDurationDark: {
+    color: '#60a5fa',
+  },
+  serviceDetailCategory: {
+    fontSize: 16,
+    color: '#d97706',
+    fontWeight: '500',
+  },
+  serviceDetailCategoryDark: {
+    color: '#f59e0b',
+  },
+  serviceDetailActions: {
+    padding: 20,
+    paddingTop: 24,
+    gap: 12,
+    backgroundColor: '#ffffff',
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  serviceDetailActionsDark: {
+    backgroundColor: '#111827',
+    borderTopColor: '#374151',
+  },
+  bookButton: {
+    backgroundColor: '#3b82f6',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  bookButtonDark: {
+    backgroundColor: '#2563eb',
+  },
+  bookButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bookButtonIcon: {
+    marginRight: 8,
+  },
+  bookButtonText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  contactButton: {
+    backgroundColor: 'transparent',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+  },
+  contactButtonDark: {
+    borderColor: '#374151',
+  },
+  contactButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contactButtonIcon: {
+    marginRight: 8,
+  },
+  contactButtonText: {
+    color: '#3b82f6',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  contactButtonTextDark: {
+    color: '#60a5fa',
+  },
+  // Styles pour les sections détaillées
+  serviceDetailSection: {
+    margin: 16,
+    marginTop: 0,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  serviceDetailSectionDark: {
+    backgroundColor: '#2d3748', // Couleur plus foncée pour le mode sombre
+  },
+  serviceDetailSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#e5e7eb',
+    gap: 8,
+  },
+  serviceDetailSectionHeaderDark: {
+    backgroundColor: '#2d3748', // Couleur plus foncée pour le mode sombre
+  },
+  serviceDetailSectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  serviceDetailSectionTitleDark: {
+    color: '#f9fafb',
+  },
+  serviceDetailSectionContent: {
+    padding: 16,
+  },
+  serviceDetailItem: {
+    marginBottom: 16,
+  },
+  serviceDetailLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  serviceDetailLabelDark: {
+    color: '#d1d5db',
+  },
+  serviceDetailValue: {
+    fontSize: 16,
+    color: '#1f2937',
+    fontWeight: '500',
+  },
+  serviceDetailValueDark: {
+    color: '#f9fafb',
+  },
+  serviceDetailValueLong: {
+    fontSize: 15,
+    color: '#374151',
+    lineHeight: 22,
+  },
+  serviceDetailValueLongDark: {
+    color: '#d1d5db',
+  },
+  conditionItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+    gap: 8,
+  },
+  conditionText: {
+    fontSize: 14,
+    color: '#374151',
+    flex: 1,
+    lineHeight: 20,
+  },
+  conditionTextDark: {
+    color: '#d1d5db',
+  },
+  // Styles pour la section filtres (comme AppointmentsScreen)
+  filtersSection: {
+    backgroundColor: '#ffffff',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  filtersSectionDark: {
+    backgroundColor: '#1f2937',
+    shadowColor: '#374151',
+  },
+  filtersHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  filtersTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#374151',
+    marginLeft: 8,
   },
-  servicesCountDark: {
-    color: '#E5E7EB',
-  },
-  actionButtonsContainer: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 0,
-    justifyContent: 'flex-start',
-  },
-  actionButtonsContainerRight: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 0,
-    justifyContent: 'flex-end',
-  },
-  filterToggleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#f0f9ff',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#e1e5e9',
-    alignSelf: 'flex-start',
-  },
-  filterToggleButtonDark: {
-    backgroundColor: '#1e293b',
-    borderColor: '#374151',
-  },
-  filterToggleButtonActive: {
-    backgroundColor: '#3498db',
-    borderColor: '#3498db',
-  },
-  filterToggleText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#3498db',
-    marginLeft: 6,
-  },
-  filterToggleTextDark: {
-    color: '#60A5FA',
-  },
-  filterToggleTextActive: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  filterIndicator: {
-    marginLeft: 4,
-  },
-  filterIndicatorText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  sortToggleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#f0f9ff',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#e1e5e9',
-    alignSelf: 'flex-start',
-  },
-  sortToggleButtonDark: {
-    backgroundColor: '#1e293b',
-    borderColor: '#374151',
-  },
-  sortToggleButtonActive: {
-    backgroundColor: '#3498db',
-    borderColor: '#3498db',
-  },
-  sortToggleText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#3498db',
-    marginLeft: 6,
-  },
-  sortToggleTextDark: {
-    color: '#60A5FA',
-  },
-  sortToggleTextActive: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  sortIndicator: {
-    marginLeft: 4,
-  },
-  sortIndicatorText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  clearButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    backgroundColor: '#fee2e2',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#fecaca',
-  },
-  clearButtonDark: {
-    backgroundColor: '#450a0a',
-    borderColor: '#7f1d1d',
-  },
-  clearButtonText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#EF4444',
-    marginLeft: 4,
-  },
-  clearButtonTextDark: {
-    color: '#EF4444',
+  filtersTitleDark: {
+    color: '#9CA3AF',
   },
   filterSection: {
     marginBottom: 16,
   },
   filterLabel: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
+    color: '#6B7280',
+    marginBottom: 12,
   },
   filterLabelDark: {
     color: '#9CA3AF',
   },
-  categoryFilterButton: {
+  statusFilters: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  statusFilterButton: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    marginRight: 8,
     backgroundColor: '#ffffff',
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#e1e5e9',
     minHeight: 36,
   },
-  categoryFilterButtonDark: {
+  statusFilterButtonDark: {
     backgroundColor: '#374151',
     borderColor: '#4b5563',
   },
-  categoryFilterButtonActive: {
-    backgroundColor: '#3498db',
+  statusFilterButtonActive: {
+    borderWidth: 2,
+    backgroundColor: '#f0f9ff',
     borderColor: '#3498db',
   },
-  categoryFilterText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#6b7280',
-  },
-  categoryFilterTextDark: {
-    color: '#9CA3AF',
-  },
-  categoryFilterTextActive: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  categoryFilterList: {
-    paddingHorizontal: 0,
-  },
-  sortSection: {
-    backgroundColor: '#f8f9fa',
-    padding: 16,
-    marginBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e1e5e9',
-  },
-  sortSectionDark: {
-    backgroundColor: '#1e293b',
-    borderBottomColor: '#374151',
-  },
-  sortHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  sortTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-    marginLeft: 8,
-  },
-  sortTitleDark: {
-    color: '#9CA3AF',
-  },
-  sortOptionsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  sortOptionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#ffffff',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e1e5e9',
-    minWidth: 120,
-  },
-  sortOptionButtonDark: {
-    backgroundColor: '#374151',
-    borderColor: '#4b5563',
-  },
-  sortOptionButtonActive: {
-    backgroundColor: '#3498db',
-    borderColor: '#3498db',
-  },
-  sortOptionText: {
+  statusFilterText: {
     fontSize: 12,
     fontWeight: '500',
     color: '#6b7280',
     marginLeft: 6,
   },
-  sortOptionTextDark: {
+  statusFilterTextDark: {
     color: '#9CA3AF',
   },
-  sortOptionTextActive: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  // Styles existants
-  monthGridDark: {
-    backgroundColor: '#1F2937',
-  },
-  // --- Styles HomeScreen calendar ---
-  navButtonDark: {
-    backgroundColor: '#374151',
-  },
-  currentMonthText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    textTransform: 'capitalize',
-  },
-  currentMonthTextDark: {
-    color: '#fff',
-  },
-  monthViewEmptyDay: {
-    backgroundColor: 'transparent',
-    borderWidth: 0,
-    elevation: 0,
-    shadowOpacity: 0,
-    opacity: 0.4,
-    width: 36,
-    height: 36,
-  },
-  monthViewDayButton: {
-    width: 36,
-    height: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 18,
-  },
-  monthViewDayButtonDark: {
-    backgroundColor: '#111827',
-  },
-  monthViewDayButtonSelected: {
-    backgroundColor: '#4F8EF7',
-  },
-  monthViewTodayButton: {
-    backgroundColor: '#e8f1ff',
-  },
-  monthViewTodayText: {
-    color: '#4F8EF7',
-    fontWeight: '600',
-  },
-  monthViewDayLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-    textAlign: 'center',
-  },
-  monthViewDayLabelDark: {
-    color: '#fff',
-  },
-  monthViewSelectedDayText: {
-    color: 'white',
-    fontWeight: '600',
-  },
-  disabledDay: {
-    opacity: 0.3,
-  },
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#f8f9fa', // Même couleur que le container
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#4F8EF7', // Couleur bleue pour ServiceBooking
-  },
-  titleSection: {
-    flex: 1,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 2,
-    fontStyle: 'italic',
-  },
-  searchInput: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    marginHorizontal: 16,
-    marginBottom: 12,
-  },
-  categoryContainer: {
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  categoryList: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  categoryButton: {
-    paddingHorizontal: 14,  // Réduit de 20 à 14
-    paddingVertical: 8,     // Réduit de 12 à 8
-    borderRadius: 20,       // Réduit de 24 à 20
-    marginRight: 8,         // Réduit de 12 à 8
-    backgroundColor: '#f1f1f1',
-    shadowColor: '#000',    // Ajout d'une ombre légère
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  selectedCategory: {
-    backgroundColor: '#3498db',
-  },
-  categoryText: {
-    fontSize: 14,           // Réduit de 16 à 14
-    color: '#444',          // Couleur plus foncée pour une meilleure lisibilité
-    fontWeight: '500',      // Ajout d'un poids de police plus important
-  },
-  selectedCategoryText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  servicesList: {
-    padding: 8,
-    paddingBottom: 20,
-  },
-  serviceCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    overflow: 'hidden',
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    width: '48%',
-    minHeight: 280,
-  },
-  serviceImage: {
-    width: '100%',
-    height: 140,
-    resizeMode: 'cover',
-  },
-  serviceContent: {
-    padding: 14,
-    flex: 1,
-  },
-  serviceInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 6,
-  },
-  serviceName: {
-    fontSize: 15,
-    fontWeight: '600',
-    flex: 1,
-    lineHeight: 20,
-  },
-  servicePrice: {
-    fontSize: 13,
-    color: '#3498db',
-    fontWeight: '600',
-  },
-  serviceDescription: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 12,
-    lineHeight: 18,
-    flex: 1,
-  },
-  serviceFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 'auto',
-    paddingTop: 8,
-  },
-  serviceDuration: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  serviceDurationText: {
-    marginLeft: 4,
-    fontSize: 11,
-    color: '#666',
-  },
-  bookButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#3498db',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 100,
-  },
-  bookButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 12,
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  // Styles pour le modal de réservation
+  
+  // Styles pour le modal de création de service
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
   },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    width: '100%',
-    maxHeight: '80%',
+  modalOverlayDark: {
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
   },
-  modalContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    width: '100%',
-    maxHeight: '80%',
-    overflow: 'hidden',
-  },
-  modalContentScrollable: {
-    padding: 20,
-  },
-  modalScrollableContent: {
-    flex: 1,
-    maxHeight: '60%',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    textAlign: 'center',
+  inputGroup: {
     marginBottom: 20,
-    color: '#333',
   },
-  serviceInfoModal: {
-    backgroundColor: '#f8f9fa',
-    padding: 15,
+  inputLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  inputLabelDark: {
+    color: '#F9FAFB',
+  },
+  input: {
+    backgroundColor: '#F9FAFB',
     borderRadius: 8,
-    marginBottom: 20,
-  },
-  serviceNameModal: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 5,
-  },
-  servicePriceModal: {
-    fontSize: 16,
-    color: '#3498db',
-    fontWeight: '600',
-    marginBottom: 5,
-  },
-  serviceDescModal: {
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 20,
-  },
-  dateSection: {
-    marginBottom: 20,
-  },
-  timeSection: {
-    marginBottom: 30,
-  },
-  sectionLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 10,
-  },
-  dateButton: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    marginRight: 10,
-    minWidth: 60,
-  },
-  selectedDateButton: {
-    backgroundColor: '#3498db',
-    borderColor: '#3498db',
-  },
-  dateButtonText: {
-    fontSize: 12,
-    color: '#666',
-    textTransform: 'capitalize',
-    marginBottom: 2,
-  },
-  selectedDateText: {
-    color: '#fff',
-  },
-  dateNumberText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  selectedDateNumber: {
-    color: '#fff',
-  },
-  dateScrollView: {
-    flexDirection: 'row',
-  },
-  dateText: {
-    fontSize: 16,
-    color: '#333',
-    marginLeft: 10,
-    textTransform: 'capitalize',
-  },
-  timeScrollView: {
-    flexDirection: 'row',
-  },
-  timeButton: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#111827',
     borderWidth: 1,
-    borderColor: '#e0e0e0',
-    minWidth: 70,
-    alignItems: 'center',
+    borderColor: '#E5E7EB',
   },
-  timeButtonSelected: {
-    backgroundColor: '#3498db',
-    borderColor: '#3498db',
+  inputDark: {
+    backgroundColor: '#374151',
+    color: '#F9FAFB',
+    borderColor: '#4B5563',
   },
-  timeButtonText: {
-    fontSize: 14,
-    color: '#333',
-    fontWeight: '500',
+  textArea: {
+    height: 80,
+    textAlignVertical: 'top',
   },
-  timeButtonTextSelected: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  timeButtonDisabled: {
-    backgroundColor: '#f0f0f0',
-    borderColor: '#d0d0d0',
-  },
-  timeButtonTextDisabled: {
-    color: '#999',
-    fontWeight: '400',
-  },
-  loadingContainer: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: 16,
-    color: '#666',
-    fontStyle: 'italic',
-    marginTop: 12,
-    fontWeight: '500',
-  },
-  loadingSubtext: {
-    fontSize: 14,
-    color: '#999',
-    marginTop: 8,
-    textAlign: 'center',
-    fontStyle: 'italic',
-  },
-  timePeriodSection: {
-    marginBottom: 20,
-  },
-  timePeriodHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-    justifyContent: 'space-between',
-  },
-  timePeriodTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginLeft: 8,
-    flex: 1,
-  },
-  timeButtonsContainer: {
+  categorySelector: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  // Styles pour le calendrier modal
-  calendarModalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    width: '95%',
-    maxHeight: '70%',
+  categorySelectorDark: {
+    // Pas de style spécifique nécessaire
   },
-  serviceInfoCalendar: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 20,
-    fontStyle: 'italic',
-  },
-  calendarHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-    paddingHorizontal: 10,
-  },
-  navButton: {
-    padding: 5,
-  },
-  calendarTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    textTransform: 'capitalize',
-  },
-  calendarContainer: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    padding: 10,
-  },
-  weekDaysHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 10,
-  },
-  dayNameHeader: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  dayNameText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#666',
-  },
-  monthGrid: {
-    gap: 5,
-  },
-  weekRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 5,
-  },
-  calendarDayButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+  categoryOption: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#F3F4F6',
     borderRadius: 20,
-  },
-  emptyDay: {
-    opacity: 0,
-  },
-  todayButton: {
-    backgroundColor: '#e3f2fd',
     borderWidth: 1,
-    borderColor: '#3498db',
+    borderColor: '#E5E7EB',
   },
-  dayButtonSelected: {
-    backgroundColor: '#3498db',
-  },
-  pastDayButton: {
-    opacity: 0.3,
-  },
-  calendarDayText: {
-    fontSize: 16,
-    color: '#333',
-    fontWeight: '500',
-  },
-  selectedDayText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  pastDayText: {
-    color: '#999',
-  },
-  closeIconButton: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#f8f9fa',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    zIndex: 10,
-  },
-  closeIconButtonDark: {
+  categoryOptionDark: {
     backgroundColor: '#374151',
     borderColor: '#4B5563',
-    shadowColor: '#000',
-    shadowOpacity: 0.7,
-    shadowRadius: 8,
   },
-  // Styles pour la section date sélectionnée
-  selectedDateSection: {
-    marginBottom: 20,
+  categoryOptionSelected: {
+    backgroundColor: '#EBF4FF',
+    borderColor: '#3B82F6',
   },
-  selectedDateDisplay: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    padding: 15,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    justifyContent: 'space-between',
+  categoryOptionText: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
   },
-  selectedDateDisplayText: {
-    fontSize: 16,
-    color: '#333',
-    flex: 1,
-    marginLeft: 10,
-    textTransform: 'capitalize',
+  categoryOptionTextDark: {
+    color: '#D1D5DB',
+  },
+  categoryOptionTextSelected: {
+    color: '#3B82F6',
+    fontWeight: '600',
   },
   modalActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 10,
+    marginTop: 24,
+    gap: 12,
+  },
+  modalActionButton: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalActionButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
   cancelButton: {
-    flex: 1,
-    paddingVertical: 12,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: '#E5E7EB',
+  },
+  cancelButtonDark: {
+    backgroundColor: '#374151',
+    borderColor: '#4B5563',
   },
   cancelButtonText: {
-    textAlign: 'center',
-    fontSize: 16,
-    color: '#666',
-    fontWeight: '500',
-  },
-  confirmButton: {
-    flex: 1,
-    paddingVertical: 12,
-    backgroundColor: '#3498db',
-    borderRadius: 8,
-  },
-  confirmButtonText: {
-    textAlign: 'center',
-    fontSize: 16,
-    color: '#fff',
-    fontWeight: '600',
-  },
-  // Styles pour la section notes
-  notesSection: {
-    marginBottom: 30,
-  },
-  notesInput: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    padding: 12,
-    fontSize: 16,
-    color: '#333',
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  notesCounter: {
-    fontSize: 12,
-    color: '#999',
-    textAlign: 'right',
-    marginTop: 5,
-  },
-  // Styles pour les indicateurs de rendez-vous
-  appointmentIndicator: {
-    position: 'absolute',
-    bottom: 2,
-    left: 0,
-    right: 0,
-    backgroundColor: '#3498db',
-    borderRadius: 8,
-    paddingVertical: 1,
-    paddingHorizontal: 2,
-  },
-  appointmentIndicatorText: {
-    fontSize: 8,
-    color: '#fff',
-    textAlign: 'center',
-    fontWeight: '600',
-  },
-  // Styles pour la section des rendez-vous
-  appointmentsSection: {
-    backgroundColor: '#f0f8ff',
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: '#3498db',
-  },
-  appointmentSimpleView: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  appointmentSimpleInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  appointmentSimpleText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-    marginLeft: 10,
-  },
-  viewMoreButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#e3f2fd',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#3498db',
-  },
-  viewMoreButtonText: {
-    fontSize: 14,
-    color: '#3498db',
-    fontWeight: '600',
-    marginRight: 4,
-  },
-  appointmentItem: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  appointmentTime: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  appointmentTimeText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#3498db',
-    marginLeft: 5,
-  },
-  appointmentServiceName: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#333',
-    flex: 2,
-    textAlign: 'center',
-  },
-  appointmentStatus: {
-    fontSize: 12,
-    color: '#666',
-    backgroundColor: '#f8f9fa',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    flex: 1,
-    textAlign: 'center',
-  },
-  // Nouveaux styles pour la section filtres
-  filtersSection: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  filtersHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  filtersIcon: {
-    marginRight: 6,
-  },
-  filtersTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-  },
-  // Styles pour le mode sombre
-  containerDark: {
-    backgroundColor: '#111827', // gray-900
-  },
-  headerDark: {
-    backgroundColor: '#111827', // gray-900 - Même couleur que le container dark
-  },
-  titleDark: {
-    color: '#60A5FA', // Bleu plus clair pour le mode sombre
-  },
-  subtitleDark: {
-    color: '#9CA3AF', // gray-400
-  },
-  searchInputDark: {
-    backgroundColor: '#374151', // gray-700
-    borderColor: '#4B5563', // gray-600
-    color: '#FFFFFF',
-  },
-  categoryContainerDark: {
-    backgroundColor: '#1F2937', // gray-800
-    borderBottomColor: '#374151', // gray-700
-  },
-  categoryButtonDark: {
-    backgroundColor: '#374151', // gray-700
-  },
-  categoryTextDark: {
-    color: '#9CA3AF', // gray-400
-  },
-  serviceCardDark: {
-    backgroundColor: '#1F2937', // gray-800
-    borderColor: 'rgba(255,255,255,0.05)',
-  },
-  serviceNameDark: {
-    color: '#FFFFFF',
-  },
-  serviceDescriptionDark: {
-    color: '#9CA3AF', // gray-400
-  },
-  servicePriceDark: {
-    color: '#60A5FA', // blue-400
-  },
-  serviceDurationTextDark: {
-    color: '#9CA3AF', // gray-400
-  },
-  modalOverlayDark: {
-    backgroundColor: 'rgba(0,0,0,0.8)',
-  },
-  modalContentDark: {
-    backgroundColor: '#1F2937', // gray-800
-  },
-  calendarModalContentDark: {
-    backgroundColor: '#1F2937', // gray-800
-  },
-  calendarHeaderDark: {
-    backgroundColor: '#111827',
-  },
-  calendarContainerDark: {
-    backgroundColor: '#111827',
-    borderColor: '#374151',
-  },
-  weekDaysHeaderDark: {
-    backgroundColor: '#1F2937',
-  },
-  dayNameTextDark: {
-    color: '#9CA3AF',
-  },
-  calendarDayButtonDark: {
-    backgroundColor: '#374151',
-  },
-  calendarDayTextDark: {
-    color: '#F3F4F6',
-  },
-  todayButtonDark: {
-    backgroundColor: '#2563EB',
-    borderColor: '#60A5FA',
-  },
-  pastDayTextDark: {
     color: '#6B7280',
   },
-  modalTitleDark: {
-    color: '#FFFFFF',
-  },
-  textDark: {
-    color: '#FFFFFF',
-  },
-  textSecondaryDark: {
-    color: '#9CA3AF', // gray-400
-  },
-  buttonDark: {
-    backgroundColor: '#374151', // gray-700
-  },
-  // Styles dark pour la section filtres
-  filtersSectionDark: {
-    backgroundColor: '#1F2937', // gray-800
-    borderBottomColor: '#374151', // gray-700
-  },
-  filtersTitleDark: {
-    color: '#FFFFFF',
-  },
-  // Styles pour l'indicateur d'heure sélectionnée
-  selectedTimeIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#e8f5e8',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#10B981',
-  },
-  selectedTimeText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#10B981',
-    marginLeft: 8,
-    flex: 1,
-  },
-  changeTimeButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  createButton: {
     backgroundColor: '#10B981',
-    borderRadius: 6,
   },
-  changeTimeText: {
-    fontSize: 12,
-    color: '#fff',
-    fontWeight: '600',
+  createButtonDisabled: {
+    backgroundColor: '#9CA3AF',
   },
-  // Styles pour les badges de période
-  periodBadge: {
-    backgroundColor: '#e3f2fd',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+  createButtonText: {
+    color: '#FFFFFF',
   },
-  periodBadgeText: {
-    fontSize: 12,
-    color: '#3498db',
-    fontWeight: '600',
-  },
-  // Styles pour les icônes de confirmation des boutons de temps
-  timeButtonCheck: {
-    position: 'absolute',
-    top: 2,
-    right: 2,
-  },
-  // Styles pour l'en-tête de section amélioré
-  timeSectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  sectionLabelEnhanced: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#333',
-    marginLeft: 10,
-  },
-  // Styles pour l'indicateur de progression
-  progressIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
+  
+  // Styles pour le système d'étapes
+  progressContainer: {
     paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#F9FAFB',
   },
-  progressStep: {
-    alignItems: 'center',
+  progressContainerDark: {
+    backgroundColor: '#374151',
   },
-  progressDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
+  progressBar: {
+    height: 4,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 2,
+    marginBottom: 8,
   },
-  progressDotActive: {
-    backgroundColor: '#3498db',
+  progressBarDark: {
+    backgroundColor: '#4B5563',
   },
-  progressDotCompleted: {
+  progressFill: {
+    height: '100%',
     backgroundColor: '#10B981',
+    borderRadius: 2,
   },
-  progressDotNumber: {
+  progressText: {
     fontSize: 12,
-    color: '#fff',
-    fontWeight: '600',
+    color: '#6B7280',
+    textAlign: 'center',
   },
-  progressLine: {
-    width: 30,
-    height: 2,
-    backgroundColor: '#e0e0e0',
-    marginHorizontal: 10,
+  progressTextDark: {
+    color: '#9CA3AF',
   },
-  progressStepText: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '500',
-  },
-  // Styles pour la boîte d'instructions
-  instructionsBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f0f8ff',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 15,
-    borderLeftWidth: 4,
-    borderLeftColor: '#3498db',
-  },
-  instructionsText: {
-    fontSize: 14,
-    color: '#2563EB',
-    marginLeft: 8,
+  stepsContainer: {
     flex: 1,
-    fontWeight: '500',
-  },
-  // Styles pour la boîte de succès
-  successBox: {
-    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'flex-start',
     alignItems: 'center',
-    backgroundColor: '#f0fff4',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 15,
-    borderLeftWidth: 4,
-    borderLeftColor: '#10B981',
+    paddingTop: 20,
   },
-  successText: {
-    fontSize: 14,
-    color: '#059669',
-    marginLeft: 8,
-    flex: 1,
-    fontWeight: '500',
-  },
-  // Styles pour le résumé de réservation
-  bookingSummary: {
-    backgroundColor: '#f8f9ff',
-    borderRadius: 12,
-    padding: 16,
-    margin: 16,
-    marginTop: 0,
-    borderWidth: 1,
-    borderColor: '#e3f2fd',
-  },
-  summaryHeader: {
-    flexDirection: 'row',
+  stepSlider: {
+    width: '100%',
+    justifyContent: 'flex-start',
     alignItems: 'center',
+    minHeight: 300,
+  },
+  stepContainer: {
+    width: '100%',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    minHeight: 200,
+  },
+  stepTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#111827',
+    textAlign: 'center',
     marginBottom: 12,
   },
-  summaryTitle: {
+  stepTitleDark: {
+    color: '#F9FAFB',
+  },
+  stepDescription: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 24,
+  },
+  stepDescriptionDark: {
+    color: '#9CA3AF',
+  },
+  stepInput: {
+    width: '100%',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    fontSize: 16,
+    color: '#111827',
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    marginBottom: 24,
+  },
+  stepInputDark: {
+    backgroundColor: '#374151',
+    color: '#F9FAFB',
+    borderColor: '#4B5563',
+  },
+  stepTextArea: {
+    height: 120,
+    textAlignVertical: 'top',
+  },
+  priceInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 24,
+  },
+  priceInput: {
+    flex: 1,
+    marginBottom: 0,
+    marginRight: 12,
+    textAlign: 'right',
+  },
+  priceSymbol: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#10B981',
+  },
+  priceSymbolDark: {
+    color: '#34D399',
+  },
+  durationInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 24,
+  },
+  durationInput: {
+    flex: 1,
+    marginBottom: 0,
+    marginRight: 12,
+    textAlign: 'right',
+  },
+  durationSymbol: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
-    marginLeft: 8,
+    color: '#3B82F6',
   },
-  summaryContent: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 12,
+  durationSymbolDark: {
+    color: '#60A5FA',
   },
-  summaryRow: {
+  categoryStepSelector: {
+    width: '100%',
+    marginBottom: 24,
+  },
+  categoryStepOption: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    marginBottom: 12,
   },
-  summaryLabel: {
-    fontSize: 14,
-    color: '#666',
+  categoryStepOptionDark: {
+    backgroundColor: '#374151',
+    borderColor: '#4B5563',
+  },
+  categoryStepOptionSelected: {
+    backgroundColor: '#EBF4FF',
+    borderColor: '#3B82F6',
+  },
+  categoryStepOptionText: {
+    fontSize: 16,
+    color: '#6B7280',
     fontWeight: '500',
   },
-  summaryValue: {
-    fontSize: 14,
-    color: '#333',
+  categoryStepOptionTextDark: {
+    color: '#D1D5DB',
+  },
+  categoryStepOptionTextSelected: {
+    color: '#3B82F6',
     fontWeight: '600',
-    flex: 1,
-    textAlign: 'right',
   },
-  summaryPrice: {
-    color: '#3498db',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  // Styles pour l'affichage en deux colonnes
-  serviceRow: {
-    justifyContent: 'space-between',
-    paddingHorizontal: 1,
-    gap: 2,
-  },
-  servicesGrid: {
+  stepActions: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    width: '100%',
+    gap: 16,
+  },
+  nextButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10B981',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
     gap: 8,
+    flex: 1,
+    justifyContent: 'center',
+  },
+  nextButtonCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10B981',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+    gap: 6,
+    alignSelf: 'center',
+    minWidth: 120,
+    justifyContent: 'center',
+  },
+  nextButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+  },
+  nextButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  prevButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    gap: 8,
+  },
+  prevButtonCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    gap: 6,
+  },
+  prevButtonDark: {
+    borderColor: '#4B5563',
+  },
+  prevButtonText: {
+    color: '#4F8EF7',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  prevButtonTextDark: {
+    color: '#60A5FA',
+  },
+  
+  // Styles pour les options d'image
+  imageOptionsContainer: {
+    paddingHorizontal: 24,
+    paddingVertical: 32,
+    alignItems: 'center',
+  },
+  imageOptionsTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: 32,
+  },
+  imageOptionsTitleDark: {
+    color: '#F9FAFB',
+  },
+  imageOptionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    paddingVertical: 20,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    marginBottom: 16,
+    width: '100%',
+    gap: 16,
+  },
+  imageOptionButtonDark: {
+    backgroundColor: '#374151',
+    borderColor: '#4B5563',
+  },
+  imageOptionText: {
+    fontSize: 16,
+    color: '#374151',
+    fontWeight: '500',
+  },
+  imageOptionTextDark: {
+    color: '#D1D5DB',
+  },
+  skipImageButton: {
+    marginTop: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  skipImageButtonDark: {
+    // Pas de style spécifique
+  },
+  skipImageText: {
+    fontSize: 14,
+    color: '#6B7280',
+    textDecorationLine: 'underline',
+  },
+  skipImageTextDark: {
+    color: '#9CA3AF',
+  },
+  
+  // Styles pour le récapitulatif
+  recapContainer: {
+    paddingHorizontal: 24,
+    paddingVertical: 32,
+  },
+  recapTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#111827',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  recapTitleDark: {
+    color: '#F9FAFB',
+  },
+  recapImageContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  recapImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 12,
+  },
+  recapFields: {
+    marginBottom: 32,
+  },
+  recapField: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  recapFieldDark: {
+    backgroundColor: '#374151',
+  },
+  recapFieldContent: {
+    flex: 1,
+  },
+  recapFieldLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 4,
+  },
+  recapFieldLabelDark: {
+    color: '#9CA3AF',
+  },
+  recapFieldValue: {
+    fontSize: 16,
+    color: '#111827',
+    fontWeight: '500',
+  },
+  recapFieldValueDark: {
+    color: '#F9FAFB',
+  },
+  finalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 16,
+  },
+  finalActionButton: {
+    flex: 1,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  finalActionButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  validateButton: {
+    backgroundColor: '#10B981',
+  },
+  validateButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+  },
+  validateButtonText: {
+    color: '#FFFFFF',
   },
 });
 

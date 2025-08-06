@@ -199,7 +199,10 @@ Pour tester sur un appareil physique, assurez-vous que :
 #### Authentification
 - `POST /auth/login` - Connexion utilisateur
 - `POST /auth/register` - Inscription utilisateur
-- `POST /auth/logout` - Déconnexion
+- `GET /auth/me` - Récupérer les informations utilisateur connecté (Token requis)
+- `PUT /auth/profile` - Mettre à jour le profil utilisateur (Token requis)
+- `PUT /auth/password` - Changer le mot de passe (Token requis)
+- `POST /auth/avatar` - Upload d'avatar/photo de profil (Token requis)
 
 #### Services
 - `GET /services` - Liste des services
@@ -208,14 +211,14 @@ Pour tester sur un appareil physique, assurez-vous que :
 - `GET /categories` - Liste des catégories
 
 #### Rendez-vous
-- `GET /appointments` - Rendez-vous de l'utilisateur
+- `GET /appointments/client` - Historique des rendez-vous du client connecté (Token requis)
 - `POST /appointments` - Créer un rendez-vous
 - `PUT /appointments/:id` - Modifier un rendez-vous
 - `DELETE /appointments/:id` - Supprimer un rendez-vous
 
 #### Profil
-- `GET /profile` - Informations utilisateur
-- `PUT /profile` - Modifier le profil
+- `GET /profile` - Informations utilisateur (Deprecated - utiliser /auth/me)
+- `PUT /profile` - Modifier le profil (Deprecated - utiliser /auth/profile)
 
 ## 📁 Structure du projet
 
@@ -413,6 +416,36 @@ Pour toute question ou problème :
 1. **Issues GitHub** : Créez une issue détaillée
 2. **Documentation** : Consultez ce README
 3. **API Docs** : [Swagger Documentation](http://172.25.1.22:5000/api-docs)
+4. **Email Support** : support@servicebooking.com
+5. **Support Téléphonique** : +33 1 23 45 67 89
+6. **Site Web** : servicebooking.com
+
+### 🆘 Aide intégrée
+
+L'application dispose d'une section **"Aide et Support"** accessible depuis le profil utilisateur qui inclut :
+
+- **Contact direct** : Email, téléphone et site web
+- **Documentation API** : Accès direct au Swagger
+- **FAQ intégrée** : Réponses aux questions fréquentes
+- **Guide d'utilisation** : Instructions détaillées
+- **Informations techniques** : Version, build et plateforme
+
+### 🔧 Résolution de problèmes
+
+#### Problèmes de connexion
+- Utilisez le bouton de test de connectivité dans l'en-tête
+- Vérifiez l'URL de l'API dans `src/config/api.ts`
+- Assurez-vous que le serveur backend est accessible
+
+#### Erreurs de réservation
+- Vérifiez votre token d'authentification
+- Consultez les logs dans la console de développement
+- Testez l'API directement via Swagger
+
+#### Interface utilisateur
+- Redémarrez l'application en cas de problème d'affichage
+- Vérifiez les permissions pour l'appareil photo (upload d'avatar)
+- Consultez la FAQ dans l'application pour les questions courantes
 
 ---
 

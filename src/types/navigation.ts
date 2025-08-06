@@ -16,6 +16,7 @@ export type RootStackParamList = {
   Services: { serviceId?: string };
   ServiceDetail: { serviceId: string };
   AppointmentDetail: { appointmentId: string };
+  EditProfile: undefined;
 };
 
 // Types pour le Stack Navigator d'authentification

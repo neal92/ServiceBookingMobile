@@ -20,18 +20,15 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(false);
 
   useEffect(() => {
-    // Charger les informations utilisateur à jour seulement si nous avons un utilisateur et un token valides
-    if (user && token) {
+    // Charger les informations utilisateur à jour
+    if (token) {
       refreshUserData();
       loadAppointmentsCount();
     }
-  }, [user, token]);
+  }, [token]);
 
   const refreshUserData = async () => {
-    if (!token || !user) {
-      console.log('❌ Pas de token ou d\'utilisateur pour récupérer les données');
-      return;
-    }
+    if (!token) return;
     
     try {
       const userData = await authAPI.getMe(token);
@@ -42,43 +39,21 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           : `${API_URL}/uploads/avatars/${userData.avatar}`;
         setUserAvatar(avatarUrl);
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Erreur lors de la récupération des données utilisateur:', error);
-      
-      // Si c'est une erreur de token expiré, ne pas afficher d'erreur car elle sera gérée par l'intercepteur
-      if (error.response?.status === 401) {
-        console.log('🔑 Token expiré détecté dans ProfileScreen, l\'intercepteur s\'en charge...');
-        return;
-      }
-      
-      // Pour d'autres erreurs, afficher un message approprié
-      Alert.alert(
-        'Erreur',
-        'Impossible de récupérer vos informations. Veuillez vérifier votre connexion.'
-      );
     }
   };
 
   const loadAppointmentsCount = async () => {
-    if (!token || !user) {
-      console.log('❌ Pas de token ou d\'utilisateur pour récupérer les rendez-vous');
-      return;
-    }
+    if (!token) return;
     
     try {
       setIsLoadingAppointments(true);
-      // Passer l'email de l'utilisateur à l'API
-      const appointments = await getClientAppointments(token, user.email);
-      setAppointmentsCount((appointments || []).length);
-    } catch (error: any) {
+      const appointments = await getClientAppointments(token);
+      setAppointmentsCount(appointments.length || 0);
+    } catch (error) {
       console.error('Erreur lors de la récupération des rendez-vous:', error);
       setAppointmentsCount(0);
-      
-      // Si c'est une erreur de token expiré, ne pas afficher d'erreur car elle sera gérée par l'intercepteur
-      if (error.response?.status === 401) {
-        console.log('🔑 Token expiré détecté dans loadAppointmentsCount, l\'intercepteur s\'en charge...');
-        return;
-      }
     } finally {
       setIsLoadingAppointments(false);
     }
@@ -100,6 +75,10 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     navigation.navigate('AppointmentsTab');
   };
 
+  const handleSettings = () => {
+    Alert.alert('À venir', 'Les paramètres seront bientôt disponibles');
+  };
+
   const handleHelpSupport = () => {
     Alert.alert(
       'Aide et Support', 
@@ -117,12 +96,12 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       <View style={[styles.header, isDarkMode && styles.headerDark]}>
         <View style={styles.titleSection}>
           <Text style={[styles.title, isDarkMode && styles.titleDark]}>ServiceBooking</Text>
-          <Text style={[styles.subtitle, isDarkMode && styles.subtitleDark]}>Simplifiez votre gestion de rendez-vous</Text>
+          <Text style={[styles.subtitle, isDarkMode && styles.subtitleDark]}>Votre profil</Text>
         </View>
+        <TouchableOpacity onPress={handleSettings}>
+          <Ionicons name="settings-outline" size={24} color={isDarkMode ? "#fff" : "#333"} />
+        </TouchableOpacity>
       </View>
-
-      {/* Espacement après header */}
-      <View style={{ height: 16 }} />
 
       <ScrollView style={[styles.content, isDarkMode && styles.contentDark]} showsVerticalScrollIndicator={false}>
         <View style={[styles.profileSection, isDarkMode && styles.profileSectionDark]}>
@@ -162,6 +141,14 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           
           {/* Statistiques rapides */}
           <View style={[styles.statsContainer, isDarkMode && styles.statsContainerDark]}>
+            <View style={[styles.statItem, isDarkMode && styles.statItemDark]}>
+              <Text style={[styles.statNumber, isDarkMode && styles.statNumberDark]}>
+                {isLoadingAppointments ? '...' : appointmentsCount}
+              </Text>
+              <Text style={[styles.statLabel, isDarkMode && styles.statLabelDark]}>
+                Rendez-vous
+              </Text>
+            </View>
             <View style={[styles.statItem, isDarkMode && styles.statItemDark]}>
               <Text style={[styles.statNumber, isDarkMode && styles.statNumberDark]}>
                 {user?.role === 'admin' ? 'Admin' : 'Client'}
@@ -249,9 +236,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#4F8EF7',
+    color: '#3498db',
   },
   subtitle: {
     fontSize: 14,
@@ -307,7 +294,7 @@ const styles = StyleSheet.create({
   },
   statsContainer: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-around',
     width: '100%',
     paddingTop: 16,
     borderTopWidth: 1,

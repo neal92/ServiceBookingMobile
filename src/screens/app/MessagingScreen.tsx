@@ -13,6 +13,10 @@ const MessagingScreen: React.FC = () => {
           <Text style={[styles.headerSubtitle, isDarkMode && styles.headerSubtitleDark]}>Simplifiez votre gestion de rendez-vous</Text>
         </View>
       </View>
+
+      {/* Espacement après header */}
+      <View style={{ height: 16 }} />
+
       <View style={[styles.content, isDarkMode && styles.contentDark]}>
         <Text style={[styles.subtitle, isDarkMode && styles.subtitleDark]}>
           Messagerie - Cette fonctionnalité sera bientôt disponible

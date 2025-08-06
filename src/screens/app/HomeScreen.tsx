@@ -6,6 +6,7 @@ import { ThemeContext } from '../../contexts/ThemeContext';
 import { getUserAppointments, createAppointment, getAvailableTimeSlots, checkTimeSlotAvailability } from '../../api/appointments';
 import { getAllServices } from '../../api/services';
 import { getUserNotifications, deleteNotification } from '../../api/notifications';
+import authAPI from '../../api/auth';
 import { Appointment, Service, Notification, CreateAppointmentRequest } from '../../types/index';
 import { AppointmentList } from '../../components/appointments/AppointmentList';
 import { Ionicons } from '@expo/vector-icons';
@@ -36,6 +37,9 @@ const HomeScreen = ({ navigation, route }: any) => {
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [clients, setClients] = useState<any[]>([]);
+  const [showDayAppointments, setShowDayAppointments] = useState(false);
+  const [showAllClients, setShowAllClients] = useState(false);
   
   // États pour la popup de réservation
   const [showBookingModal, setShowBookingModal] = useState(false);
@@ -44,10 +48,15 @@ const HomeScreen = ({ navigation, route }: any) => {
   const [availableSlots, setAvailableSlots] = useState<any[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   
+  // États pour les contrôles du header
+  const [showSort, setShowSort] = useState(false);
+  
   // Animations pour le calendrier
   const calendarHeight = useRef(new Animated.Value(160)).current; // Augmenté à 160 pour bien afficher les jours et le bouton
   const calendarOpacity = useRef(new Animated.Value(1)).current;
   const monthGridScale = useRef(new Animated.Value(0)).current;
+  const appointmentCardHeight = useRef(new Animated.Value(80)).current; // Animation pour la carte des rendez-vous
+  const appointmentListOpacity = useRef(new Animated.Value(0)).current; // Animation pour l'opacité de la liste
   
   const [currentWeekStartDate, setCurrentWeekStartDate] = useState(() => {
     const date = new Date();
@@ -116,29 +125,55 @@ const HomeScreen = ({ navigation, route }: any) => {
       try {
         const data = await getUserAppointments(token);
         
-        // Adapter les données pour inclure le champ time s'il existe
-        const adaptedData = data.map((apt: any) => ({
-          ...apt,
-          // S'assurer que le champ time est préservé
-          time: apt.time || apt.appointmentTime || null,
-          service: apt.service || {
-            id: apt.serviceId?.toString() ?? '',
-            name: apt.serviceName ?? '',
-            price: Number(apt.price) ?? 0,
-            duration: apt.duration ?? 0,
-            description: '',
-            category: '',
-            imageUrl: '',
-          },
-        }));
+        // Enrichir les données avec les informations complètes des services
+        const enrichedData = enrichAppointmentsWithServices(data, services);
         
-        setAppointments(adaptedData);
+        setAppointments(enrichedData);
       } catch (e) {
         setAppointments([]);
       } finally {
         setIsLoading(false);
       }
     }
+  };
+
+  // Fonction pour enrichir les rendez-vous avec les données complètes des services
+  const enrichAppointmentsWithServices = (appointments: any[], services: Service[]) => {
+    console.log('Enriching appointments:', appointments.length, 'appointments with', services.length, 'services');
+    
+    return appointments.map((apt: any) => {
+      // Chercher le service complet dans la liste des services
+      const fullService = services.find(s => 
+        s.id === apt.serviceId || 
+        s.id === apt.service?.id ||
+        s.name === apt.serviceName
+      );
+
+      console.log('Appointment data:', {
+        serviceName: apt.serviceName,
+        serviceId: apt.serviceId,
+        serviceDescription: apt.serviceDescription,
+        description: apt.description,
+        foundService: fullService?.name,
+        foundServiceDescription: fullService?.description
+      });
+
+      const fallbackService = {
+        id: apt.serviceId?.toString() ?? '',
+        name: apt.serviceName ?? '',
+        price: Number(apt.price) ?? 0,
+        duration: apt.duration ?? 0,
+        description: (apt as any).serviceDescription || (apt as any).description || 'Aucune description disponible',
+        category: apt.serviceCategory || apt.category || '',
+        imageUrl: apt.serviceImageUrl || apt.imageUrl || '',
+      };
+
+      return {
+        ...apt,
+        time: apt.time || apt.appointmentTime || null,
+        service: fullService || apt.service || fallbackService,
+      };
+    });
   };
 
   React.useEffect(() => {
@@ -148,23 +183,10 @@ const HomeScreen = ({ navigation, route }: any) => {
         try {
           const data = await getUserAppointments(token);
           
-          // Adapter les données pour inclure le champ time s'il existe
-          const adaptedData = data.map((apt: any) => ({
-            ...apt,
-            // S'assurer que le champ time est préservé
-            time: apt.time || apt.appointmentTime || null,
-            service: apt.service || {
-              id: apt.serviceId?.toString() ?? '',
-              name: apt.serviceName ?? '',
-              price: Number(apt.price) ?? 0,
-              duration: apt.duration ?? 0,
-              description: '',
-              category: '',
-              imageUrl: '',
-            },
-          }));
+          // Enrichir les données avec les informations complètes des services
+          const enrichedData = enrichAppointmentsWithServices(data, services);
           
-          setAppointments(adaptedData);
+          setAppointments(enrichedData);
         } catch (e) {
           setAppointments([]);
         } finally {
@@ -195,9 +217,31 @@ const HomeScreen = ({ navigation, route }: any) => {
       }
     };
     
-    fetchAppointments();
-    fetchServices();
-    fetchNotifications();
+    const fetchClients = async () => {
+      if (user && token && user.role === 'admin') {
+        try {
+          const response: any = await authAPI.getAllUsers(token);
+          // La réponse de l'API contient { users: [...], total: number }
+          const data = Array.isArray(response) ? response : response.users || [];
+          // Filtrer pour ne garder que les clients (non-admins)
+          const clientsOnly = data.filter((client: any) => client.role !== 'admin');
+          setClients(clientsOnly);
+          console.log('Clients chargés:', clientsOnly.length);
+        } catch (e) {
+          console.error('Erreur lors de la récupération des clients:', e);
+        }
+      }
+    };
+    
+    // Charger d'abord les services, puis les rendez-vous pour pouvoir enrichir les données
+    const loadData = async () => {
+      await fetchServices(); // Charger les services en premier
+      await fetchAppointments(); // Puis les rendez-vous avec enrichissement
+      await fetchNotifications();
+      await fetchClients(); // Charger les clients pour les admins
+    };
+    
+    loadData();
   }, [user, token]);
 
   // Écouter les paramètres de navigation pour recharger automatiquement
@@ -355,13 +399,53 @@ const HomeScreen = ({ navigation, route }: any) => {
     return appDate.toDateString() === selectedDate.toDateString();
   });
 
+  // Animation pour l'expansion de la carte des rendez-vous
+  useEffect(() => {
+    if (showDayAppointments && appointmentsOfDay.length > 0) {
+      // Calculer la hauteur en fonction du nombre de rendez-vous
+      const baseHeight = 80; // Hauteur de base de la carte
+      const itemHeight = 110; // Hauteur augmentée pour inclure le temps restant (était 90)
+      const buttonHeight = 50; // Hauteur du bouton "Voir tous mes rendez-vous"
+      const padding = 24; // Padding de la liste
+      const targetHeight = baseHeight + (appointmentsOfDay.length * itemHeight) + buttonHeight + padding;
+      
+      Animated.parallel([
+        Animated.spring(appointmentCardHeight, {
+          toValue: targetHeight,
+          useNativeDriver: false,
+          tension: 100,
+          friction: 8,
+        }),
+        Animated.timing(appointmentListOpacity, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        })
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.spring(appointmentCardHeight, {
+          toValue: 80, // Hauteur de base
+          useNativeDriver: false,
+          tension: 100,
+          friction: 8,
+        }),
+        Animated.timing(appointmentListOpacity, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        })
+      ]).start();
+    }
+  }, [showDayAppointments, appointmentsOfDay.length]);
+
   // Calculer les statistiques des rendez-vous
-  const totalAppointments = appointments.length;
-  const completedAppointments = appointments.filter(a => {
+  const totalAppointments = (appointments || []).length;
+  const completedAppointments = (appointments || []).filter(a => {
     const appDate = new Date(a.date);
     return appDate < today && a.status === 'confirmed';
   }).length;
-  const upcomingAppointments = appointments.filter(a => {
+  const upcomingAppointments = (appointments || []).filter(a => {
     const appDate = new Date(a.date);
     return appDate >= today;
   }).length;
@@ -479,6 +563,57 @@ const HomeScreen = ({ navigation, route }: any) => {
       case 'promo': return '🎉';
       case 'system': return 'ℹ️';
       default: return '🔔';
+    }
+  };
+
+  // Fonction pour calculer le temps restant avant un rendez-vous
+  const getTimeUntilAppointment = (appointment: Appointment) => {
+    try {
+      const now = new Date();
+      const appointmentDate = new Date(appointment.date);
+      
+      // Si il y a une heure, l'ajouter à la date
+      if (appointment.time) {
+        const [hours, minutes] = appointment.time.split(':').map(Number);
+        appointmentDate.setHours(hours, minutes, 0, 0);
+      } else {
+        // Si pas d'heure, considérer 9h00 par défaut
+        appointmentDate.setHours(9, 0, 0, 0);
+      }
+      
+      const diffInMs = appointmentDate.getTime() - now.getTime();
+      
+      // Si c'est dans le passé
+      if (diffInMs < 0) {
+        return 'Passé';
+      }
+      
+      const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+      const diffInDays = Math.floor(diffInHours / 24);
+      
+      // Si c'est dans moins de 24h, afficher en heures et minutes
+      if (diffInHours < 24) {
+        const hours = diffInHours;
+        const minutes = Math.floor((diffInMs % (1000 * 60 * 60)) / (1000 * 60));
+        
+        if (hours === 0 && minutes < 60) {
+          return `Dans ${minutes} min`;
+        } else if (hours === 0) {
+          return `Dans ${Math.floor(minutes / 60)}h${minutes % 60 > 0 ? (minutes % 60).toString().padStart(2, '0') : ''}`;
+        } else {
+          return `Dans ${hours}h${minutes > 0 ? minutes.toString().padStart(2, '0') : '00'}`;
+        }
+      }
+      
+      // Si c'est dans plus de 24h, afficher en jours
+      if (diffInDays === 1) {
+        return 'Demain';
+      } else {
+        return `Dans ${diffInDays} jour${diffInDays > 1 ? 's' : ''}`;
+      }
+    } catch (error) {
+      console.error('Erreur lors du calcul du temps restant:', error);
+      return 'Bientôt';
     }
   };
 
@@ -654,6 +789,11 @@ const HomeScreen = ({ navigation, route }: any) => {
     setBookingStep('service');
   };
 
+  // Fonctions pour les contrôles du header
+  const toggleSort = () => {
+    setShowSort(!showSort);
+  };
+
   return (
     <Animated.View
       style={{
@@ -670,38 +810,50 @@ const HomeScreen = ({ navigation, route }: any) => {
       >
       <View style={[styles.header, isDarkMode && styles.headerDark]}>
         <View style={styles.titleSection}>
-          <Text style={[styles.appName, isDarkMode && styles.appNameDark]}>
-            Bienvenue chez <Text style={[styles.appName, isDarkMode && styles.appNameDark]}>ServiceBooking</Text> {user ? (user.firstName || '') : ''}!
+          <View style={styles.titleWithThemeButton}>
+            <Text style={[styles.appName, isDarkMode && styles.appNameDark]}>
+              ServiceBooking
+            </Text>
+            <TouchableOpacity
+              style={[styles.themeModeButton, isDarkMode && styles.themeModeButtonDark]}
+              onPress={toggleTheme}
+            >
+              <Ionicons 
+                name={isDarkMode ? "sunny-outline" : "moon-outline"} 
+                size={20} 
+                color="#4F8EF7" 
+              />
+            </TouchableOpacity>
+          </View>
+          <Text style={[styles.headerSubtitle, isDarkMode && styles.headerSubtitleDark]}>
+            Simplifiez votre gestion de rendez-vous
           </Text>
-          <Text style={[styles.headerSubtitle, isDarkMode && styles.headerSubtitleDark]}>Gérer facilement vos rendez-vous de chez votre prestataire ❤️</Text>
+          <View style={{ marginTop: 20 }}>
+            <Text style={[styles.welcomeText, isDarkMode && styles.welcomeTextDark]}>
+              Bienvenue {user ? (user.firstName || '') : ''}!
+            </Text>
+          </View>
         </View>
-        <TouchableOpacity
-          style={[styles.themeModeButton, isDarkMode && styles.themeModeButtonDark]}
-          onPress={toggleTheme}
-        >
-          <Ionicons 
-            name={isDarkMode ? "sunny-outline" : "moon-outline"}
-            size={24} 
-            color="#4F8EF7"
-          />
-        </TouchableOpacity>
+        <View style={styles.headerControls}>
+
+        </View>
       </View>
       
-      {/* Section des statistiques des rendez-vous */}
-      {user && (
+      {/* Section des statistiques des rendez-vous - Uniquement pour les admins */}
+      {user && user.role === 'admin' && (
         <View style={[styles.statsSection, isDarkMode && styles.statsSectionDark]}>
           <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{totalAppointments}</Text>
+            <Text style={styles.statNumber}>{totalAppointments || 0}</Text>
             <Text style={[styles.statLabel, isDarkMode && styles.textSecondaryDark]}>Rendez-vous</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{completedAppointments}</Text>
+            <Text style={styles.statNumber}>{completedAppointments || 0}</Text>
             <Text style={[styles.statLabel, isDarkMode && styles.textSecondaryDark]}>Complétés</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{upcomingAppointments}</Text>
+            <Text style={styles.statNumber}>{upcomingAppointments || 0}</Text>
             <Text style={[styles.statLabel, isDarkMode && styles.textSecondaryDark]}>À venir</Text>
           </View>
         </View>
@@ -710,12 +862,12 @@ const HomeScreen = ({ navigation, route }: any) => {
   {/*Section calendriers */}
 
       <Card style={[styles.card, isDarkMode && styles.cardDark]}>
-        <Card.Content style={isDarkMode && styles.cardContentDark}>
+        <Card.Content style={[styles.cardContent, isDarkMode && styles.cardContentDark]}>
           {/* En-tête de l'agenda avec titre, mois, boutons de navigation et mode */}
           <View style={styles.calendarHeader}>
             <View style={styles.calendarTitleContainer}>
               <Text style={[styles.sectionTitle, isDarkMode && styles.sectionTitleDark]}>
-                📅 Agenda {viewMode === 'week' ? 'Semaine' : 'Mois'}
+                📅 {user?.role === 'admin' ? `Agenda ${viewMode === 'week' ? 'Semaine' : 'Mois'}` : 'Vos Rendez-vous'}
               </Text>
             </View>
             <View style={styles.calendarControls}>
@@ -991,10 +1143,16 @@ const HomeScreen = ({ navigation, route }: any) => {
                   </Button>
                 </>
               ) : (
-                <View style={styles.appointmentSimpleView}>
+                <Animated.View style={[
+                  styles.appointmentSimpleView,
+                  { 
+                    height: appointmentCardHeight,
+                    overflow: 'hidden'
+                  }
+                ]}>
                   <TouchableOpacity 
                     style={styles.appointmentBadgeWithButton}
-                    onPress={() => navigation.navigate('AppointmentsTab')}
+                    onPress={() => setShowDayAppointments(!showDayAppointments)}
                     activeOpacity={0.8}
                   >
                     <View style={styles.appointmentBadgeContent}>
@@ -1005,21 +1163,173 @@ const HomeScreen = ({ navigation, route }: any) => {
                     </View>
                     <View style={styles.badgeDivider} />
                     <View style={styles.viewMoreSection}>
-                      <Text style={styles.viewMoreButtonText}>Voir plus</Text>
-                      <Ionicons name="chevron-forward-circle" size={18} color="#fff" style={{marginLeft: 6}} />
+                      <Text style={styles.viewMoreButtonText}>{showDayAppointments ? 'Masquer' : 'Voir plus'}</Text>
+                      <Ionicons 
+                        name={showDayAppointments ? "chevron-up-circle" : "chevron-down-circle"} 
+                        size={18} 
+                        color="#fff" 
+                        style={{marginLeft: 6}} 
+                      />
                     </View>
                   </TouchableOpacity>
-                </View>
+                  
+                  {/* Liste déroulante des rendez-vous du jour */}
+                  {showDayAppointments && (
+                    <Animated.View style={[
+                      styles.dayAppointmentsList, 
+                      isDarkMode && styles.dayAppointmentsListDark,
+                      { opacity: appointmentListOpacity }
+                    ]}>
+                      <View style={styles.appointmentsGrid}>
+                        {appointmentsOfDay.map((appointment, index) => (
+                          <View 
+                            key={appointment.id || index} 
+                            style={[
+                              styles.dayAppointmentItem, 
+                              isDarkMode && styles.dayAppointmentItemDark,
+                              // Largeur dynamique selon le nombre de rendez-vous
+                              appointmentsOfDay.length === 1 
+                                ? { width: '100%' } // Un seul : pleine largeur
+                                : { width: '48%' }   // Plusieurs : 2 colonnes
+                            ]}
+                          >
+                            {/* Titre du service en haut */}
+                            <Text style={[styles.appointmentServiceName, isDarkMode && styles.appointmentServiceNameDark]} numberOfLines={1}>
+                              {appointment.service?.name || 'Service non défini'}
+                            </Text>
+                            
+                            {/* Description et heure en dessous */}
+                            <View style={styles.appointmentRow}>
+                              <Text style={[styles.appointmentDescription, isDarkMode && styles.appointmentDescriptionDark]} numberOfLines={1}>
+                                {appointment.service?.description || 'Aucune description disponible'}
+                              </Text>
+                              <Text style={[styles.appointmentTime, isDarkMode && styles.appointmentTimeDark]}>
+                                {appointment.time || 'Non définie'}
+                              </Text>
+                            </View>
+                            
+                            {/* Badge de statut */}
+                            <View style={[
+                              styles.appointmentStatus,
+                              appointment.status === 'confirmed' && styles.statusConfirmed,
+                              appointment.status === 'pending' && styles.statusPending,
+                              appointment.status === 'cancelled' && styles.statusCancelled,
+                            ]}>
+                              <Text style={[
+                                styles.appointmentStatusText,
+                                appointment.status === 'confirmed' && styles.statusConfirmedText,
+                                appointment.status === 'pending' && styles.statusPendingText,
+                                appointment.status === 'cancelled' && styles.statusCancelledText
+                              ]}>
+                                {appointment.status === 'confirmed' ? 'Confirmé' : 
+                                 appointment.status === 'pending' ? 'En attente' : 
+                                 appointment.status === 'cancelled' ? 'Annulé' : 
+                                 'Statut inconnu'}
+                              </Text>
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    </Animated.View>
+                  )}
+                </Animated.View>
               )}
             </View>
           )}
         </Card.Content>
       </Card>
       
-      {/* Section Aperçu des activités du prestataire */}
-      {user && services.length > 0 && (
+      {/* Section Vos Clients - Uniquement pour les admins */}
+      {user && user.role === 'admin' && (
         <Card style={[styles.card, isDarkMode && styles.cardDark]}>
-          <Card.Content style={isDarkMode && styles.cardContentDark}>
+          <Card.Content style={[styles.cardContent, isDarkMode && styles.cardContentDark]}>
+            <Text style={[styles.sectionTitle, isDarkMode && styles.sectionTitleDark]}>
+              👥 Vos Clients ({clients.length})
+            </Text>
+            {clients.length === 0 ? (
+              <Text style={[styles.noNotificationsText, isDarkMode && styles.noNotificationsTextDark]}>
+                Aucun client enregistré
+              </Text>
+            ) : (
+              <>
+                {(showAllClients ? clients : clients.slice(0, 5)).map((client, index) => (
+                  <View key={client.id} style={[styles.clientItem, isDarkMode && styles.clientItemDark]}>
+                    {/* Avatar du client */}
+                    <View style={[styles.clientAvatar, isDarkMode && styles.clientAvatarDark]}>
+                      {client.avatar && !client.isPresetAvatar ? (
+                        <Image 
+                          source={{ uri: `${API_URL}${client.avatar}` }} 
+                          style={styles.clientAvatarImage}
+                          onError={() => {
+                            console.log('Erreur chargement avatar:', client.avatar);
+                          }}
+                        />
+                      ) : (
+                        <Text style={[styles.clientAvatarText, isDarkMode && styles.clientAvatarTextDark]}>
+                          {client.firstName?.charAt(0)?.toUpperCase() || '?'}
+                        </Text>
+                      )}
+                    </View>
+                    
+                    {/* Informations du client */}
+                    <View style={styles.clientInfo}>
+                      <Text style={[styles.clientName, isDarkMode && styles.clientNameDark]}>
+                        {client.firstName} {client.lastName || ''}
+                      </Text>
+                      <Text style={[styles.clientEmail, isDarkMode && styles.clientEmailDark]}>
+                        {client.email}
+                      </Text>
+                      {client.phone && (
+                        <Text style={[styles.clientPhone, isDarkMode && styles.clientPhoneDark]}>
+                          📞 {client.phone}
+                        </Text>
+                      )}
+                      {client.pseudo && (
+                        <Text style={[styles.clientPseudo, isDarkMode && styles.clientPseudoDark]}>
+                          @{client.pseudo}
+                        </Text>
+                      )}
+                    </View>
+                    
+                    {/* Date d'inscription */}
+                    <View style={styles.clientMeta}>
+                      <Text style={[styles.clientDate, isDarkMode && styles.clientDateDark]}>
+                        {new Date(client.created_at).toLocaleDateString('fr-FR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric'
+                        })}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+                
+                {/* Bouton Voir plus/Voir moins */}
+                {clients.length > 5 && (
+                  <TouchableOpacity
+                    style={[styles.viewMoreClientsButton, isDarkMode && styles.viewMoreClientsButtonDark]}
+                    onPress={() => setShowAllClients(!showAllClients)}
+                  >
+                    <Text style={[styles.viewMoreClientsText, isDarkMode && styles.viewMoreClientsTextDark]}>
+                      {showAllClients ? `Voir moins` : `Voir plus (${clients.length - 5} autres)`}
+                    </Text>
+                    <Ionicons 
+                      name={showAllClients ? "chevron-up" : "chevron-down"} 
+                      size={16} 
+                      color={isDarkMode ? "#60A5FA" : "#4F8EF7"} 
+                    />
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
+          </Card.Content>
+        </Card>
+      )}
+      
+      {/* Section Aperçu des activités du prestataire - Uniquement pour les clients */}
+      {user && user.role !== 'admin' && services.length > 0 ? (
+        <Card style={[styles.card, isDarkMode && styles.cardDark]}>
+          <Card.Content style={[styles.cardContent, isDarkMode && styles.cardContentDark]}>
             <Text style={[styles.sectionTitle, isDarkMode && styles.sectionTitleDark]}>
               👁️ Aperçu
             </Text>
@@ -1054,12 +1364,12 @@ const HomeScreen = ({ navigation, route }: any) => {
             ))}
           </Card.Content>
         </Card>
-      )}
+      ) : null}
 
-      {/* Section Notifications */}
-      {user && (
+      {/* Section Notifications - Uniquement pour les clients */}
+      {user && user.role !== 'admin' && (
         <Card style={[styles.card, isDarkMode && styles.cardDark]}>
-          <Card.Content style={isDarkMode && styles.cardContentDark}>
+          <Card.Content style={[styles.cardContent, isDarkMode && styles.cardContentDark]}>
             <Text style={[styles.sectionTitle, isDarkMode && styles.sectionTitleDark]}>
               🔔 Notifications
             </Text>
@@ -1099,7 +1409,7 @@ const HomeScreen = ({ navigation, route }: any) => {
         <View style={[styles.modalContent, isDarkMode && styles.modalContentDark]}>
           
           {/* En-tête du modal */}
-          <View style={styles.modalHeader}>
+          <View style={[styles.modalHeader, isDarkMode && styles.modalHeaderDark]}>
             <Text style={[styles.modalTitle, isDarkMode && styles.modalTitleDark]}>
               {bookingStep === 'service' ? 'Choisir un service' : `Choisir un créneau`}
             </Text>
@@ -1133,10 +1443,11 @@ const HomeScreen = ({ navigation, route }: any) => {
                   {getServiceImageUrl(service) ? (
                     <Image 
                       source={{ uri: getServiceImageUrl(service)! }} 
-                      style={styles.serviceOptionImage}
+                      style={[styles.serviceOptionImage, isDarkMode && styles.serviceOptionImageDark]}
+                      resizeMode="cover"
                     />
                   ) : (
-                    <View style={[styles.serviceOptionImage, styles.serviceOptionImagePlaceholder]}>
+                    <View style={[styles.serviceOptionImage, styles.serviceOptionImagePlaceholder, isDarkMode && styles.serviceOptionImagePlaceholderDark]}>
                       <Text style={{ fontSize: 20 }}>📷</Text>
                     </View>
                   )}
@@ -1184,6 +1495,7 @@ const HomeScreen = ({ navigation, route }: any) => {
               )}
               
               {/* Note explicative sur les créneaux */}
+
               {selectedService && (
                 <View style={[styles.timeSlotInfo, isDarkMode && styles.timeSlotInfoDark]}>
                   <Ionicons name="information-circle" size={16} color={isDarkMode ? "#60A5FA" : "#4F8EF7"} />
@@ -1300,6 +1612,9 @@ const styles = StyleSheet.create({
   appNameDark: {
     color: '#60A5FA', // Bleu plus clair pour le mode sombre
   },
+  welcomeTextDark: {
+    color: '#E5E7EB', // gray-200 pour le texte de bienvenue en mode sombre
+  },
   brandHighlightDark: {
     backgroundColor: '#60A5FA',
     color: '#111827',
@@ -1327,13 +1642,13 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   sectionTitleDark: {
-    color: '#fff',
+    color: '#F9FAFB',
   },
   textDark: {
-    color: '#fff',
+    color: '#F3F4F6',
   },
   textSecondaryDark: {
-    color: '#9CA3AF', // gray-400
+    color: '#D1D5DB', // gray-300 pour une meilleure lisibilité
   },
   borderDark: {
     borderColor: '#374151', // gray-700
@@ -1358,6 +1673,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#4F8EF7',
   },
+  welcomeText: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#333',
+    marginTop: 10,
+  },
   brandHighlight: {
     backgroundColor: '#4F8EF7',
     color: '#fff',
@@ -1369,6 +1690,12 @@ const styles = StyleSheet.create({
   },
   titleSection: {
     flex: 1,
+  },
+  titleWithThemeButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
   },
   headerSubtitle: {
     fontSize: 12,
@@ -1585,6 +1912,9 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     borderColor: 'rgba(0,0,0,0.05)',
   },
+  cardContent: {
+    paddingHorizontal: 8, // Réduction du padding horizontal
+  },
   button: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -1609,7 +1939,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 8,
-    color: '#222',
+    color: '#1a1a1a',
     letterSpacing: 0.3,
   },
   daysContainer: {
@@ -1896,7 +2226,9 @@ const styles = StyleSheet.create({
   appointmentBadgeContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 8, // Réduit de 12 à 8 pour un badge plus compact
+    padding: 6, // Réduit encore plus pour un badge plus compact
+    paddingHorizontal: 10, // Padding horizontal légèrement plus grand que vertical
+    paddingVertical: 6, // Padding vertical plus petit
   },
   badgeDivider: {
     height: 1,
@@ -1914,7 +2246,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   appointmentText: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#fff',
     fontWeight: '600',
     flex: 1,
@@ -2008,6 +2340,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
+  modalHeaderDark: {
+    borderBottomColor: '#4B5563',
+  },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
@@ -2059,15 +2394,23 @@ const styles = StyleSheet.create({
     borderColor: '#4B5563',
   },
   serviceOptionImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     marginRight: 15,
+    borderWidth: 2,
+    borderColor: '#e9ecef',
+  },
+  serviceOptionImageDark: {
+    borderColor: '#4B5563',
   },
   serviceOptionImagePlaceholder: {
     backgroundColor: '#f0f0f0',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  serviceOptionImagePlaceholderDark: {
+    backgroundColor: '#4B5563',
   },
   serviceOptionContent: {
     flex: 1,
@@ -2229,6 +2572,371 @@ const styles = StyleSheet.create({
   },
   timeSlotInfoTextDark: {
     color: '#9CA3AF',
+  },
+  
+  // Styles pour la liste des rendez-vous du jour
+  dayAppointmentsList: {
+    backgroundColor: 'transparent', // Container invisible
+    borderRadius: 0,
+    marginTop: 12,
+    padding: 0,
+    marginHorizontal: 0,
+    borderWidth: 0,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  dayAppointmentsListDark: {
+    backgroundColor: 'transparent', // Container invisible en mode sombre
+    borderColor: 'transparent',
+    shadowOpacity: 0,
+  },
+  
+  // Grille pour afficher les rendez-vous en colonnes
+  appointmentsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    gap: 8, // Espacement entre les cards
+  },
+  
+  dayAppointmentItem: {
+    flexDirection: 'column',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 2,
+    minHeight: 85,
+  },
+  dayAppointmentItemDark: {
+    backgroundColor: '#374151',
+    borderColor: '#4B5563',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+  },
+  appointmentTimeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 90,
+    backgroundColor: '#EBF8FF',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  appointmentTimeText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E40AF',
+    marginLeft: 6,
+  },
+  appointmentTimeTextDark: {
+    color: '#93C5FD',
+  },
+  appointmentDetailsContainer: {
+    flex: 1,
+    marginLeft: 16,
+  },
+  appointmentServiceName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1a1a1a',
+    marginBottom: 6,
+  },
+  appointmentServiceNameDark: {
+    color: '#F9FAFB',
+  },
+  
+  // Design compact et raffiné
+  appointmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  appointmentDotLine: {
+    flex: 1,
+    height: 0.5,
+    backgroundColor: '#D1D5DB',
+    marginHorizontal: 6,
+  },
+  appointmentTime: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6366F1',
+    textAlign: 'right',
+  },
+  appointmentTimeDark: {
+    color: '#A5B4FC',
+  },
+  appointmentDescription: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    flex: 1,
+    fontStyle: 'italic',
+  },
+  appointmentDescriptionDark: {
+    color: '#6B7280',
+  },
+  appointmentStatus: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: '#F9FAFB',
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  appointmentServicePrice: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#10B981',
+    marginBottom: 6,
+  },
+  appointmentServicePriceDark: {
+    color: '#34D399',
+  },
+  appointmentTimeUntilContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  appointmentTimeUntil: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#D97706',
+    marginLeft: 4,
+  },
+  appointmentTimeUntilDark: {
+    color: '#F59E0B',
+  },
+  appointmentStatusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    minWidth: 80,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  appointmentStatusBadgeDark: {
+    // Les couleurs des statuts sont déjà définies dans les styles spécifiques
+  },
+  appointmentStatusText: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statusConfirmed: {
+    backgroundColor: '#D1FAE5',
+    borderWidth: 1,
+    borderColor: '#10B981',
+  },
+  statusConfirmedText: {
+    color: '#065F46',
+  },
+  statusPending: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  statusPendingText: {
+    color: '#92400E',
+  },
+  statusCancelled: {
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+  },
+  statusCancelledText: {
+    color: '#991B1B',
+  },
+  viewAllAppointmentsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#EBF8FF',
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#3498db',
+    marginTop: 8,
+    shadowColor: '#3498db',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  viewAllAppointmentsButtonDark: {
+    backgroundColor: '#1E3A8A',
+    borderColor: '#60A5FA',
+  },
+  viewAllAppointmentsText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E40AF',
+    marginRight: 6,
+  },
+  viewAllAppointmentsTextDark: {
+    color: '#93C5FD',
+  },
+  // Styles pour les contrôles du header
+  headerControls: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  controlButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#f3f4f6',
+  },
+  controlButtonDark: {
+    backgroundColor: '#374151',
+  },
+  sortContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#f3f4f6',
+  },
+  sortContainerDark: {
+    backgroundColor: '#374151',
+  },
+  sortText: {
+    fontSize: 14,
+    color: '#6b7280',
+    fontStyle: 'italic',
+  },
+  sortTextDark: {
+    color: '#9ca3af',
+  },
+  
+  // Styles pour la section clients
+  clientItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  clientItemDark: {
+    backgroundColor: '#374151',
+    borderColor: '#4b5563',
+  },
+  clientAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#4F8EF7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  clientAvatarDark: {
+    backgroundColor: '#60A5FA',
+  },
+  clientAvatarImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+  },
+  clientAvatarText: {
+    color: 'white',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  clientAvatarTextDark: {
+    color: 'white',
+  },
+  clientInfo: {
+    flex: 1,
+  },
+  clientName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  clientNameDark: {
+    color: '#f9fafb',
+  },
+  clientEmail: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 2,
+  },
+  clientEmailDark: {
+    color: '#9ca3af',
+  },
+  clientPhone: {
+    fontSize: 12,
+    color: '#4b5563',
+    marginBottom: 2,
+  },
+  clientPhoneDark: {
+    color: '#d1d5db',
+  },
+  clientPseudo: {
+    fontSize: 12,
+    color: '#4F8EF7',
+    fontStyle: 'italic',
+  },
+  clientPseudoDark: {
+    color: '#60A5FA',
+  },
+  clientMeta: {
+    alignItems: 'flex-end',
+  },
+  clientDate: {
+    fontSize: 12,
+    color: '#9ca3af',
+    fontWeight: '500',
+  },
+  clientDateDark: {
+    color: '#6b7280',
+  },
+  
+  // Styles pour le bouton "Voir plus" des clients
+  viewMoreClientsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: 'transparent',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#4F8EF7',
+    marginTop: 8,
+  },
+  viewMoreClientsButtonDark: {
+    borderColor: '#60A5FA',
+  },
+  viewMoreClientsText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4F8EF7',
+    marginRight: 6,
+  },
+  viewMoreClientsTextDark: {
+    color: '#60A5FA',
   },
 });
 

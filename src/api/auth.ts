@@ -10,6 +10,7 @@ interface User {
   role: string;
   avatar?: string;
   pseudo?: string;
+  phone?: string;
 }
 
 interface LoginCredentials {
@@ -79,6 +80,87 @@ const authAPI = {
     } catch (error: any) {
       console.error('Registration error:', error);
       throw new Error(error.response?.data?.message || 'Erreur lors de l\'inscription');
+    }
+  },
+
+  // Récupérer les informations utilisateur
+  getMe: async (token: string): Promise<User> => {
+    try {
+      const response = await apiClient.get<User>('/auth/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      // Mettre à jour le stockage local
+      await AsyncStorage.setItem('user', JSON.stringify(response.data));
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('Get me error:', error);
+      throw new Error(error.response?.data?.message || 'Erreur lors de la récupération des informations');
+    }
+  },
+
+  // Mettre à jour le profil
+  updateProfile: async (profileData: Partial<User>, token: string): Promise<User> => {
+    try {
+      const response = await apiClient.put<User>('/auth/profile', profileData, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      // Mettre à jour le stockage local
+      await AsyncStorage.setItem('user', JSON.stringify(response.data));
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('Update profile error:', error);
+      throw new Error(error.response?.data?.message || 'Erreur lors de la mise à jour du profil');
+    }
+  },
+
+  // Changer le mot de passe
+  changePassword: async (passwordData: { currentPassword: string; newPassword: string }, token: string): Promise<void> => {
+    try {
+      await apiClient.put('/auth/password', passwordData, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    } catch (error: any) {
+      console.error('Change password error:', error);
+      throw new Error(error.response?.data?.message || 'Erreur lors du changement de mot de passe');
+    }
+  },
+
+  // Upload d'avatar
+  uploadAvatar: async (imageFile: FormData, token: string): Promise<User> => {
+    try {
+      const response = await apiClient.post<User>('/auth/avatar', imageFile, {
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      
+      // Mettre à jour le stockage local
+      await AsyncStorage.setItem('user', JSON.stringify(response.data));
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('Upload avatar error:', error);
+      throw new Error(error.response?.data?.message || 'Erreur lors de l\'upload de l\'avatar');
+    }
+  },
+  
+  // Fonction pour récupérer tous les utilisateurs (admin seulement)
+  getAllUsers: async (token: string): Promise<User[]> => {
+    try {
+      const response = await apiClient.get<User[]>('/auth/users', {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Get all users error:', error);
+      throw error;
     }
   },
   

@@ -58,7 +58,7 @@ export const AppointmentList: React.FC<AppointmentListProps> = ({
   return (
     <FlatList
       data={appointments}
-      keyExtractor={(item) => item.id}
+      keyExtractor={(item) => String(item.id)}
       renderItem={({ item }) => (
         <AppointmentCard
           appointment={item}
@@ -74,7 +74,8 @@ export const AppointmentList: React.FC<AppointmentListProps> = ({
 
 const styles = StyleSheet.create({
   listContent: {
-    padding: 16,
+    padding: 20,
+    paddingBottom: 100,
   },
   emptyContainer: {
     flex: 1,

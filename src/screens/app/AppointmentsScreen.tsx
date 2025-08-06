@@ -152,18 +152,21 @@ const AppointmentsScreen: React.FC = () => {
   };
   
   // Séparer d'abord par upcoming/past, puis appliquer le filtre de statut
-  const allUpcomingAppointments = appointments.filter(apt => {
+  const allUpcomingAppointments = (appointments || []).filter(apt => {
     const fullAptDateTime = getFullAppointmentDateTime(apt);
     return fullAptDateTime >= currentDate && apt.status !== 'cancelled';
   });
   
-  const allPastAppointments = appointments.filter(apt => {
+  const allPastAppointments = (appointments || []).filter(apt => {
     const fullAptDateTime = getFullAppointmentDateTime(apt);
     return fullAptDateTime < currentDate || apt.status === 'cancelled';
   });
   
   // Fonction pour filtrer les rendez-vous par statut
   const filterAppointmentsByStatus = (appointments: Appointment[]) => {
+    if (!appointments || !Array.isArray(appointments)) {
+      return [];
+    }
     if (statusFilter === 'all') {
       return appointments;
     }
@@ -172,6 +175,9 @@ const AppointmentsScreen: React.FC = () => {
 
   // Fonction pour trier les rendez-vous par date
   const sortAppointmentsByDate = (appointments: Appointment[]) => {
+    if (!appointments || !Array.isArray(appointments)) {
+      return [];
+    }
     return [...appointments].sort((a, b) => {
       const dateTimeA = getFullAppointmentDateTime(a).getTime();
       const dateTimeB = getFullAppointmentDateTime(b).getTime();
@@ -191,10 +197,14 @@ const AppointmentsScreen: React.FC = () => {
   const getStatusCount = (status: string, isUpcoming: boolean = true) => {
     const relevantAppointments = isUpcoming ? allUpcomingAppointments : allPastAppointments;
     
-    if (status === 'all') {
-      return relevantAppointments.length;
+    if (!relevantAppointments || !Array.isArray(relevantAppointments)) {
+      return 0;
     }
-    return relevantAppointments.filter(apt => apt.status === status).length;
+    
+    if (status === 'all') {
+      return relevantAppointments.length || 0;
+    }
+    return relevantAppointments.filter(apt => apt.status === status).length || 0;
   };
 
   // Fonctions d'animation pour les onglets
@@ -270,6 +280,9 @@ const AppointmentsScreen: React.FC = () => {
           <Ionicons name="refresh" size={24} color={isDarkMode ? "#60A5FA" : "#3498db"} />
         </TouchableOpacity>
       </View>
+
+      {/* Espacement après header */}
+      <View style={{ height: 16 }} />
 
       <View style={[styles.tabContainer, isDarkMode && styles.tabContainerDark]}>
         <View style={styles.tabWrapper}>
@@ -558,11 +571,8 @@ const AppointmentsScreen: React.FC = () => {
         </Animated.View>
       )}
 
-      <ScrollView 
-        style={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ flexGrow: 1 }}
-      >
+      {/* Liste des rendez-vous */}
+      <View style={styles.listContainer}>
         {activeTab === 'upcoming' ? (
           <AppointmentList
             appointments={upcomingAppointments}
@@ -578,7 +588,7 @@ const AppointmentsScreen: React.FC = () => {
             onCancelAppointment={handleDeleteAppointment}
           />
         )}
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 };

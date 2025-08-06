@@ -1,6 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
+import { isTokenExpiredError, handleTokenExpiration } from './authUtils';
 
 // Importer la configuration de l'API depuis le fichier de configuration
 import { API_URL } from '../config/api';
@@ -40,7 +41,7 @@ apiClient.interceptors.response.use(
     console.log(`API Response: ${response.status} - ${response.config.method?.toUpperCase()} ${response.config.url}`);
     return response;
   },
-  (error) => {
+  async (error) => {
     // Log détaillé des erreurs pour faciliter le debug
     if (error.response) {
       // La requête a été faite et le serveur a répondu avec un code d'état hors de la plage 2xx
@@ -51,6 +52,18 @@ apiClient.interceptors.response.use(
         url: error.config.url,
         method: error.config.method
       });
+
+      // Gestion automatique des tokens expirés avec les nouveaux utilitaires
+      if (isTokenExpiredError(error)) {
+        console.log('🔑 Token expiré détecté avec les utilitaires...');
+        
+        // Utiliser la fonction utilitaire pour gérer l'expiration
+        await handleTokenExpiration(() => {
+          // Ici, on pourrait déclencher une redirection vers la page de connexion
+          // Cela sera géré par le contexte d'authentification
+          console.log('� Redirection vers la connexion déclenchée');
+        });
+      }
     } else if (error.request) {
       // La requête a été faite mais aucune réponse n'a été reçue
       console.error('API No Response:', error.request);

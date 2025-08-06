@@ -68,3 +68,39 @@ export const getAllCategories = async (token?: string) => {
     throw error;
   }
 };
+
+/**
+ * Récupérer l'URL de l'image d'un service
+ * @param serviceId - ID du service
+ * @param imageName - Nom du fichier image
+ * @returns URL complète de l'image
+ */
+export const getServiceImageUrl = (serviceId: string, imageName: string) => {
+  if (!imageName) return null;
+  
+  // Si l'image commence déjà par http, la retourner telle quelle
+  if (imageName.startsWith('http')) {
+    return imageName;
+  }
+  
+  // Sinon, construire l'URL avec l'API_URL
+  return `/services/${serviceId}/image/${imageName}`;
+};
+
+/**
+ * Vérifier si une image de service existe
+ * @param serviceId - ID du service
+ * @param imageName - Nom du fichier image
+ * @param token - Token d'authentification (optionnel)
+ * @returns Boolean indiquant si l'image existe
+ */
+export const checkServiceImageExists = async (serviceId: string, imageName: string, token?: string) => {
+  try {
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const response = await apiClient.head(`/services/${serviceId}/image/${imageName}`, { headers });
+    return response.status === 200;
+  } catch (error) {
+    console.log(`Image ${imageName} not found for service ${serviceId}`);
+    return false;
+  }
+};

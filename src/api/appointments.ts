@@ -2,7 +2,43 @@ import apiClient from '../utils/api';
 import { Appointment, CreateAppointmentRequest } from '../types/index';
 
 /**
- * Récupérer tous les rendez-vous d'un utilisateur
+ * Récupérer les rendez-vous du client connecté (nouvelle API)
+ * @param token - Token d'authentification
+ * @param userEmail - Email de l'utilisateur (optionnel, si requis par l'API)
+ * @returns Liste des rendez-vous du client
+ */
+export const getClientAppointments = async (token: string, userEmail?: string) => {
+  try {
+    // Construire l'URL avec l'email si fourni
+    const url = userEmail 
+      ? `/appointments/client?email=${encodeURIComponent(userEmail)}`
+      : `/appointments/client`;
+      
+    const response = await apiClient.get(
+      url, 
+      { headers: { Authorization: `Bearer ${token}` }}
+    );
+    return response.data;
+  } catch (error: any) {
+    // Si l'erreur indique qu'un email est requis, essayer avec l'API alternative
+    if (error.response?.status === 400 && 
+        error.response?.data?.message?.includes('Email parameter is required')) {
+      console.log('📧 Email requis, essai avec l\'API alternative...');
+      
+      // Essayer avec l'API alternative getUserAppointments
+      try {
+        return await getUserAppointments(token);
+      } catch (fallbackError) {
+        console.error('❌ Échec avec l\'API alternative aussi:', fallbackError);
+        throw error; // Renvoyer l'erreur originale
+      }
+    }
+    throw error;
+  }
+};
+
+/**
+ * Récupérer tous les rendez-vous d'un utilisateur (deprecated - utiliser getClientAppointments)
  * @param token - Token d'authentification
  * @returns Liste des rendez-vous
  */
