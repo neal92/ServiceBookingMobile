@@ -127,40 +127,48 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = ({
         </View>
 
         {/* Durée du service */}
-        {service?.duration && (
-          <View style={[
-            styles.durationSection,
-            isDarkMode && { backgroundColor: '#1E3A8A' }
-          ]}>
-            <Ionicons 
-              name="time-outline" 
-              size={16} 
-              color={isDarkMode ? '#93C5FD' : '#1E40AF'} 
-            />
-            <Text style={[styles.duration, isDarkMode && styles.durationDark]}>
-              Durée : {String(service.duration || 0)} min
-            </Text>
-          </View>
-        )}
+        {(() => {
+          return service?.duration && (
+            <View style={[
+              styles.durationSection,
+              isDarkMode && { backgroundColor: '#1E3A8A' }
+            ]}>
+              <Ionicons 
+                name="time-outline" 
+                size={16} 
+                color={isDarkMode ? '#93C5FD' : '#1E40AF'} 
+              />
+              <Text style={[styles.duration, isDarkMode && styles.durationDark]}>
+                Durée : {String(service.duration || 0)} min
+              </Text>
+            </View>
+          );
+        })()}
 
         {/* Bouton d'action */}
-        {status === 'cancelled' || status === 'completed' ? (
-          <TouchableOpacity 
-            style={[styles.deleteButton, isDarkMode && styles.deleteButtonDark]}
-            onPress={() => onCancel && onCancel(id)}
-          >
-            <Ionicons name="trash-outline" size={16} color="#EF4444" />
-            <Text style={styles.deleteButtonText}>Supprimer</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity 
-            style={[styles.cancelButton, isDarkMode && styles.cancelButtonDark]}
-            onPress={() => onCancel && onCancel(id)}
-          >
-            <Ionicons name="close-outline" size={16} color="#EF4444" />
-            <Text style={styles.cancelButtonText}>Annuler</Text>
-          </TouchableOpacity>
-        )}
+        {(() => {
+          if (status === 'cancelled' || status === 'completed') {
+            return (
+              <TouchableOpacity 
+                style={[styles.deleteButton, isDarkMode && styles.deleteButtonDark]}
+                onPress={() => onCancel && onCancel(id)}
+              >
+                <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                <Text style={styles.deleteButtonText}>Supprimer</Text>
+              </TouchableOpacity>
+            );
+          } else {
+            return (
+              <TouchableOpacity 
+                style={[styles.cancelButton, isDarkMode && styles.cancelButtonDark]}
+                onPress={() => onCancel && onCancel(id)}
+              >
+                <Ionicons name="close-outline" size={16} color="#EF4444" />
+                <Text style={styles.cancelButtonText}>Annuler</Text>
+              </TouchableOpacity>
+            );
+          }
+        })()}
       </View>
     </TouchableOpacity>
   );

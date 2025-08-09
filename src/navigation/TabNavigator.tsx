@@ -124,40 +124,46 @@ const TabNavigator = () => {
           title: 'Services',
         }}
       />
-      {isAuthenticated ? (
-        <>
-          <Tab.Screen
-            name="AppointmentsTab"
-            component={AppointmentsScreen}
-            options={{
-              title: 'Rendez-vous',
-            }}
-          />
-          <Tab.Screen
-            name="MessagingTab"
-            component={MessagingScreen}
-            options={{
-              title: 'Messages',
-            }}
-          />
-          <Tab.Screen
-            name="ProfileTab"
-            component={ProfileScreen}
-            options={{
-              title: 'Profil',
-            }}
-          />
-        </>
-      ) : (
-        <Tab.Screen
-          name="AuthTab"
-          component={AuthNavigator}
-          options={{
-            title: 'Connexion',
-            headerShown: false,
-          }}
-        />
-      )}
+      {(() => {
+        if (isAuthenticated) {
+          return (
+            <>
+              <Tab.Screen
+                name="AppointmentsTab"
+                component={AppointmentsScreen}
+                options={{
+                  title: 'Rendez-vous',
+                }}
+              />
+              <Tab.Screen
+                name="MessagingTab"
+                component={MessagingScreen}
+                options={{
+                  title: 'Messages',
+                }}
+              />
+              <Tab.Screen
+                name="ProfileTab"
+                component={ProfileScreen}
+                options={{
+                  title: 'Profil',
+                }}
+              />
+            </>
+          );
+        } else {
+          return (
+            <Tab.Screen
+              name="AuthTab"
+              component={AuthNavigator}
+              options={{
+                title: 'Connexion',
+                headerShown: false,
+              }}
+            />
+          );
+        }
+      })()}
     </Tab.Navigator>
     </View>
   );

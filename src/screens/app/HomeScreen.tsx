@@ -30,7 +30,12 @@ const HomeScreen = ({ navigation, route }: any) => {
       prevIsDarkMode.current = isDarkMode;
     }
   }, [isDarkMode]);
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  // État pour la sélection de date/heure (initialiser à demain pour éviter les dates passées)
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow;
+  });
   const [selectedTime, setSelectedTime] = useState('09:00');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -124,12 +129,16 @@ const HomeScreen = ({ navigation, route }: any) => {
       setIsLoading(true);
       try {
         const data = await getUserAppointments(token);
+        console.log('📅 Raw appointments data:', data);
         
         // Enrichir les données avec les informations complètes des services
+        console.log('🔄 Enriching with', services.length, 'services available');
         const enrichedData = enrichAppointmentsWithServices(data, services);
+        console.log('✨ Enriched appointments:', enrichedData);
         
         setAppointments(enrichedData);
       } catch (e) {
+        console.error('❌ Error reloading appointments:', e);
         setAppointments([]);
       } finally {
         setIsLoading(false);
@@ -139,31 +148,50 @@ const HomeScreen = ({ navigation, route }: any) => {
 
   // Fonction pour enrichir les rendez-vous avec les données complètes des services
   const enrichAppointmentsWithServices = (appointments: any[], services: Service[]) => {
-    console.log('Enriching appointments:', appointments.length, 'appointments with', services.length, 'services');
+    console.log('🔍 Enriching appointments:', appointments.length, 'appointments with', services.length, 'services');
     
     return appointments.map((apt: any) => {
-      // Chercher le service complet dans la liste des services
+      // Chercher le service complet dans la liste des services avec plusieurs critères
       const fullService = services.find(s => 
         s.id === apt.serviceId || 
         s.id === apt.service?.id ||
-        s.name === apt.serviceName
+        s.name === apt.serviceName ||
+        s.id.toString() === apt.serviceId?.toString()
       );
 
-      console.log('Appointment data:', {
+      console.log('🔎 Processing appointment:', {
+        appointmentId: apt.id,
         serviceName: apt.serviceName,
         serviceId: apt.serviceId,
-        serviceDescription: apt.serviceDescription,
-        description: apt.description,
-        foundService: fullService?.name,
-        foundServiceDescription: fullService?.description
+        appointmentServiceDescription: apt.serviceDescription,
+        appointmentDescription: apt.description,
+        foundService: fullService ? {
+          id: fullService.id,
+          name: fullService.name,
+          description: fullService.description
+        } : null
       });
 
+      // Si on trouve le service complet, l'utiliser en priorité
+      if (fullService) {
+        return {
+          ...apt,
+          time: apt.time || apt.appointmentTime || null,
+          service: {
+            ...fullService,
+            // S'assurer que la description est bien présente
+            description: fullService.description || 'Aucune description disponible'
+          },
+        };
+      }
+
+      // Sinon, créer un service de fallback avec les données disponibles
       const fallbackService = {
         id: apt.serviceId?.toString() ?? '',
-        name: apt.serviceName ?? '',
+        name: apt.serviceName ?? 'Service non défini',
         price: Number(apt.price) ?? 0,
         duration: apt.duration ?? 0,
-        description: (apt as any).serviceDescription || (apt as any).description || 'Aucune description disponible',
+        description: apt.serviceDescription || apt.description || 'Aucune description disponible',
         category: apt.serviceCategory || apt.category || '',
         imageUrl: apt.serviceImageUrl || apt.imageUrl || '',
       };
@@ -171,7 +199,7 @@ const HomeScreen = ({ navigation, route }: any) => {
       return {
         ...apt,
         time: apt.time || apt.appointmentTime || null,
-        service: fullService || apt.service || fallbackService,
+        service: fallbackService,
       };
     });
   };
@@ -182,12 +210,16 @@ const HomeScreen = ({ navigation, route }: any) => {
         setIsLoading(true);
         try {
           const data = await getUserAppointments(token);
+          console.log('📅 Raw appointments data:', data);
           
           // Enrichir les données avec les informations complètes des services
+          console.log('🔄 Enriching with', services.length, 'services available');
           const enrichedData = enrichAppointmentsWithServices(data, services);
+          console.log('✨ Enriched appointments:', enrichedData);
           
           setAppointments(enrichedData);
         } catch (e) {
+          console.error('❌ Error fetching appointments:', e);
           setAppointments([]);
         } finally {
           setIsLoading(false);
@@ -199,9 +231,10 @@ const HomeScreen = ({ navigation, route }: any) => {
       if (user && token) {
         try {
           const data = await getAllServices(token);
+          console.log('🛠️ Services loaded:', data.length, 'services');
           setServices(data);
         } catch (e) {
-          console.error('Erreur lors de la récupération des services:', e);
+          console.error('❌ Erreur lors de la récupération des services:', e);
         }
       }
     };
@@ -731,6 +764,39 @@ const HomeScreen = ({ navigation, route }: any) => {
     }
     
     try {
+      // Validation : s'assurer que la date est dans le futur
+      const selectedDateTime = new Date(selectedDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Reset les heures pour comparer seulement les dates
+      selectedDateTime.setHours(0, 0, 0, 0);
+      
+      if (selectedDateTime < today) {
+        Alert.alert(
+          'Date invalide', 
+          'Veuillez sélectionner une date dans le futur.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
+      // Validation supplémentaire : si c'est aujourd'hui, vérifier que l'heure est dans le futur
+      const isToday = selectedDateTime.getTime() === today.getTime();
+      if (isToday && timeSlot) {
+        const [hours, minutes] = timeSlot.split(':').map(Number);
+        const currentTime = new Date();
+        const selectedTime = new Date();
+        selectedTime.setHours(hours, minutes, 0, 0);
+        
+        if (selectedTime <= currentTime) {
+          Alert.alert(
+            'Heure invalide', 
+            'Veuillez sélectionner une heure dans le futur.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+      }
+      
       // Format de données selon l'API: CreateAppointmentRequest
       const appointmentData: CreateAppointmentRequest = {
         clientName: `${user.firstName} ${user.lastName || ''}`.trim(), // Nom complet du client
@@ -840,24 +906,26 @@ const HomeScreen = ({ navigation, route }: any) => {
       </View>
       
       {/* Section des statistiques des rendez-vous - Uniquement pour les admins */}
-      {user && user.role === 'admin' && (
-        <View style={[styles.statsSection, isDarkMode && styles.statsSectionDark]}>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{totalAppointments || 0}</Text>
-            <Text style={[styles.statLabel, isDarkMode && styles.textSecondaryDark]}>Rendez-vous</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{completedAppointments || 0}</Text>
-            <Text style={[styles.statLabel, isDarkMode && styles.textSecondaryDark]}>Complétés</Text>
-          </View>
-          <View style={styles.statDivider} />
+      {(() => {
+        return user && user.role === 'admin' && (
+          <View style={[styles.statsSection, isDarkMode && styles.statsSectionDark]}>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{totalAppointments || 0}</Text>
+              <Text style={[styles.statLabel, isDarkMode && styles.textSecondaryDark]}>Rendez-vous</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{completedAppointments || 0}</Text>
+              <Text style={[styles.statLabel, isDarkMode && styles.textSecondaryDark]}>Complétés</Text>
+            </View>
+            <View style={styles.statDivider} />
           <View style={styles.statItem}>
             <Text style={styles.statNumber}>{upcomingAppointments || 0}</Text>
             <Text style={[styles.statLabel, isDarkMode && styles.textSecondaryDark]}>À venir</Text>
           </View>
         </View>
-      )}
+        );
+      })()}
 
   {/*Section calendriers */}
 
@@ -964,14 +1032,46 @@ const HomeScreen = ({ navigation, route }: any) => {
                             styles.dayButton, 
                             isDarkMode && styles.dayButtonDark,
                             isToday(item) && styles.todayButton,
-                            item.toDateString() === selectedDate.toDateString() && styles.dayButtonSelected
+                            item.toDateString() === selectedDate.toDateString() && styles.dayButtonSelected,
+                            // Style pour les dates passées
+                            (() => {
+                              const today = new Date();
+                              today.setHours(0, 0, 0, 0);
+                              const itemDate = new Date(item);
+                              itemDate.setHours(0, 0, 0, 0);
+                              return itemDate < today;
+                            })() && [styles.pastDay, isDarkMode && styles.pastDayDark]
                           ]}
-                          onPress={() => setSelectedDate(item)}
+                          onPress={() => {
+                            // Empêcher la sélection de dates passées
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            const itemDate = new Date(item);
+                            itemDate.setHours(0, 0, 0, 0);
+                            
+                            if (itemDate >= today) {
+                              setSelectedDate(item);
+                            } else {
+                              Alert.alert(
+                                'Date invalide', 
+                                'Impossible de sélectionner une date passée.',
+                                [{ text: 'OK' }]
+                              );
+                            }
+                          }}
                         >
                           <Text style={[
                             styles.dayLabel,
                             isDarkMode && styles.textDark,
-                            item.toDateString() === selectedDate.toDateString() && { color: '#fff' }
+                            item.toDateString() === selectedDate.toDateString() && { color: '#fff' },
+                            // Style pour les dates passées
+                            (() => {
+                              const today = new Date();
+                              today.setHours(0, 0, 0, 0);
+                              const itemDate = new Date(item);
+                              itemDate.setHours(0, 0, 0, 0);
+                              return itemDate < today;
+                            })() && styles.pastDayText
                           ]}>
                             {item.toLocaleDateString('fr-FR', { weekday: 'short' })}
                           </Text>
@@ -979,7 +1079,15 @@ const HomeScreen = ({ navigation, route }: any) => {
                             <Text style={[
                               styles.dayNumber,
                               isDarkMode && styles.dayNumberDark,
-                              item.toDateString() === selectedDate.toDateString() && { color: '#fff' }
+                              item.toDateString() === selectedDate.toDateString() && { color: '#fff' },
+                              // Style pour les dates passées
+                              (() => {
+                                const today = new Date();
+                                today.setHours(0, 0, 0, 0);
+                                const itemDate = new Date(item);
+                                itemDate.setHours(0, 0, 0, 0);
+                                return itemDate < today;
+                              })() && styles.pastDayText
                             ]}>{item.getDate()}</Text>
                             {appointmentStatus && (
                               <View style={[
@@ -1069,16 +1177,48 @@ const HomeScreen = ({ navigation, route }: any) => {
                                   styles.monthViewDayButton,
                                   isDarkMode && styles.monthViewDayButtonDark,
                                   isToday(dayItem) && styles.monthViewTodayButton,
-                                  dayItem.toDateString() === selectedDate.toDateString() && styles.monthViewDayButtonSelected
+                                  dayItem.toDateString() === selectedDate.toDateString() && styles.monthViewDayButtonSelected,
+                                  // Style pour les dates passées
+                                  (() => {
+                                    const today = new Date();
+                                    today.setHours(0, 0, 0, 0);
+                                    const itemDate = new Date(dayItem);
+                                    itemDate.setHours(0, 0, 0, 0);
+                                    return itemDate < today;
+                                  })() && [styles.monthViewPastDay, isDarkMode && styles.monthViewPastDayDark]
                                 ]}
-                                onPress={() => setSelectedDate(dayItem)}
+                                onPress={() => {
+                                  // Empêcher la sélection de dates passées
+                                  const today = new Date();
+                                  today.setHours(0, 0, 0, 0);
+                                  const itemDate = new Date(dayItem);
+                                  itemDate.setHours(0, 0, 0, 0);
+                                  
+                                  if (itemDate >= today) {
+                                    setSelectedDate(dayItem);
+                                  } else {
+                                    Alert.alert(
+                                      'Date invalide', 
+                                      'Impossible de sélectionner une date passée.',
+                                      [{ text: 'OK' }]
+                                    );
+                                  }
+                                }}
                               >
                                 <View style={styles.dayNumberContainer}>
                                   <Text style={[
                                     styles.monthViewDayLabel,
                                     isDarkMode && styles.monthViewDayLabelDark,
                                     isToday(dayItem) && styles.monthViewTodayText,
-                                    dayItem.toDateString() === selectedDate.toDateString() && styles.monthViewSelectedDayText
+                                    dayItem.toDateString() === selectedDate.toDateString() && styles.monthViewSelectedDayText,
+                                    // Style pour les dates passées
+                                    (() => {
+                                      const today = new Date();
+                                      today.setHours(0, 0, 0, 0);
+                                      const itemDate = new Date(dayItem);
+                                      itemDate.setHours(0, 0, 0, 0);
+                                      return itemDate < today;
+                                    })() && styles.monthViewPastDayText
                                   ]}>
                                     {dayItem.getDate()}
                                   </Text>
@@ -1221,10 +1361,18 @@ const HomeScreen = ({ navigation, route }: any) => {
                                 appointment.status === 'pending' && styles.statusPendingText,
                                 appointment.status === 'cancelled' && styles.statusCancelledText
                               ]}>
-                                {appointment.status === 'confirmed' ? 'Confirmé' : 
-                                 appointment.status === 'pending' ? 'En attente' : 
-                                 appointment.status === 'cancelled' ? 'Annulé' : 
-                                 'Statut inconnu'}
+                                {(() => {
+                                  switch (appointment.status) {
+                                    case 'confirmed':
+                                      return 'Confirmé';
+                                    case 'pending':
+                                      return 'En attente';
+                                    case 'cancelled':
+                                      return 'Annulé';
+                                    default:
+                                      return 'Statut inconnu';
+                                  }
+                                })()}
                               </Text>
                             </View>
                           </View>
@@ -1240,16 +1388,17 @@ const HomeScreen = ({ navigation, route }: any) => {
       </Card>
       
       {/* Section Vos Clients - Uniquement pour les admins */}
-      {user && user.role === 'admin' && (
-        <Card style={[styles.card, isDarkMode && styles.cardDark]}>
-          <Card.Content style={[styles.cardContent, isDarkMode && styles.cardContentDark]}>
-            <Text style={[styles.sectionTitle, isDarkMode && styles.sectionTitleDark]}>
-              👥 Vos Clients ({clients.length})
-            </Text>
-            {clients.length === 0 ? (
-              <Text style={[styles.noNotificationsText, isDarkMode && styles.noNotificationsTextDark]}>
-                Aucun client enregistré
+      {(() => {
+        return user && user.role === 'admin' && (
+          <Card style={[styles.card, isDarkMode && styles.cardDark]}>
+            <Card.Content style={[styles.cardContent, isDarkMode && styles.cardContentDark]}>
+              <Text style={[styles.sectionTitle, isDarkMode && styles.sectionTitleDark]}>
+                👥 Vos Clients ({clients.length})
               </Text>
+              {clients.length === 0 ? (
+                <Text style={[styles.noNotificationsText, isDarkMode && styles.noNotificationsTextDark]}>
+                  Aucun client enregistré
+                </Text>
             ) : (
               <>
                 {(showAllClients ? clients : clients.slice(0, 5)).map((client, index) => (
@@ -1279,16 +1428,20 @@ const HomeScreen = ({ navigation, route }: any) => {
                       <Text style={[styles.clientEmail, isDarkMode && styles.clientEmailDark]}>
                         {client.email}
                       </Text>
-                      {client.phone && (
-                        <Text style={[styles.clientPhone, isDarkMode && styles.clientPhoneDark]}>
-                          📞 {client.phone}
-                        </Text>
-                      )}
-                      {client.pseudo && (
-                        <Text style={[styles.clientPseudo, isDarkMode && styles.clientPseudoDark]}>
-                          @{client.pseudo}
-                        </Text>
-                      )}
+                      {(() => {
+                        return client.phone && (
+                          <Text style={[styles.clientPhone, isDarkMode && styles.clientPhoneDark]}>
+                            📞 {client.phone}
+                          </Text>
+                        );
+                      })()}
+                      {(() => {
+                        return client.pseudo && (
+                          <Text style={[styles.clientPseudo, isDarkMode && styles.clientPseudoDark]}>
+                            @{client.pseudo}
+                          </Text>
+                        );
+                      })()}
                     </View>
                     
                     {/* Date d'inscription */}
@@ -1305,30 +1458,34 @@ const HomeScreen = ({ navigation, route }: any) => {
                 ))}
                 
                 {/* Bouton Voir plus/Voir moins */}
-                {clients.length > 5 && (
-                  <TouchableOpacity
-                    style={[styles.viewMoreClientsButton, isDarkMode && styles.viewMoreClientsButtonDark]}
-                    onPress={() => setShowAllClients(!showAllClients)}
-                  >
-                    <Text style={[styles.viewMoreClientsText, isDarkMode && styles.viewMoreClientsTextDark]}>
-                      {showAllClients ? `Voir moins` : `Voir plus (${clients.length - 5} autres)`}
-                    </Text>
-                    <Ionicons 
+                {(() => {
+                  return clients.length > 5 && (
+                    <TouchableOpacity
+                      style={[styles.viewMoreClientsButton, isDarkMode && styles.viewMoreClientsButtonDark]}
+                      onPress={() => setShowAllClients(!showAllClients)}
+                    >
+                      <Text style={[styles.viewMoreClientsText, isDarkMode && styles.viewMoreClientsTextDark]}>
+                        {showAllClients ? `Voir moins` : `Voir plus (${clients.length - 5} autres)`}
+                      </Text>
+                      <Ionicons 
                       name={showAllClients ? "chevron-up" : "chevron-down"} 
                       size={16} 
                       color={isDarkMode ? "#60A5FA" : "#4F8EF7"} 
                     />
                   </TouchableOpacity>
-                )}
+                  );
+                })()}
               </>
             )}
           </Card.Content>
         </Card>
-      )}
+        );
+      })()}
       
       {/* Section Aperçu des activités du prestataire - Uniquement pour les clients */}
-      {user && user.role !== 'admin' && services.length > 0 ? (
-        <Card style={[styles.card, isDarkMode && styles.cardDark]}>
+      {(() => {
+        return user && user.role !== 'admin' && services.length > 0 ? (
+          <Card style={[styles.card, isDarkMode && styles.cardDark]}>
           <Card.Content style={[styles.cardContent, isDarkMode && styles.cardContentDark]}>
             <Text style={[styles.sectionTitle, isDarkMode && styles.sectionTitleDark]}>
               👁️ Aperçu
@@ -1353,25 +1510,29 @@ const HomeScreen = ({ navigation, route }: any) => {
                 )}
                 <View style={styles.activityContent}>
                   <Text style={[styles.activityMessage, isDarkMode && styles.activityMessageDark]}>{activity.message}</Text>
-                  {activity.serviceData && (
-                    <Text style={[styles.activityServicePrice, isDarkMode && styles.activityServicePriceDark]}>
-                      {activity.serviceData.price || 0}€ • {activity.serviceData.duration || 0} min
-                    </Text>
-                  )}
+                  {(() => {
+                    return activity.serviceData && (
+                      <Text style={[styles.activityServicePrice, isDarkMode && styles.activityServicePriceDark]}>
+                        {activity.serviceData.price || 0}€ • {activity.serviceData.duration || 0} min
+                      </Text>
+                    );
+                  })()}
                   <Text style={[styles.activityTime, isDarkMode && styles.activityTimeDark]}>Il y a {activity.time || 'récemment'}</Text>
                 </View>
               </View>
             ))}
           </Card.Content>
         </Card>
-      ) : null}
+        ) : null;
+      })()}
 
       {/* Section Notifications - Uniquement pour les clients */}
-      {user && user.role !== 'admin' && (
-        <Card style={[styles.card, isDarkMode && styles.cardDark]}>
-          <Card.Content style={[styles.cardContent, isDarkMode && styles.cardContentDark]}>
-            <Text style={[styles.sectionTitle, isDarkMode && styles.sectionTitleDark]}>
-              🔔 Notifications
+      {(() => {
+        return user && user.role !== 'admin' && (
+          <Card style={[styles.card, isDarkMode && styles.cardDark]}>
+            <Card.Content style={[styles.cardContent, isDarkMode && styles.cardContentDark]}>
+              <Text style={[styles.sectionTitle, isDarkMode && styles.sectionTitleDark]}>
+                🔔 Notifications
             </Text>
             {notifications.length === 0 ? (
               <Text style={[styles.noNotificationsText, isDarkMode && styles.noNotificationsTextDark]}>Aucune notification</Text>
@@ -1394,7 +1555,8 @@ const HomeScreen = ({ navigation, route }: any) => {
             )}
           </Card.Content>
         </Card>
-      )}
+        );
+      })()}
             
     </ScrollView>
     
@@ -1500,12 +1662,16 @@ const HomeScreen = ({ navigation, route }: any) => {
                 <View style={[styles.timeSlotInfo, isDarkMode && styles.timeSlotInfoDark]}>
                   <Ionicons name="information-circle" size={16} color={isDarkMode ? "#60A5FA" : "#4F8EF7"} />
                   <Text style={[styles.timeSlotInfoText, isDarkMode && styles.timeSlotInfoTextDark]}>
-                    {(selectedService.duration || 30) >= 60 
-                      ? "Créneaux d'1 heure adaptés à ce service"
-                      : (selectedService.duration || 30) <= 30 
-                        ? "Créneaux de 30 min adaptés à ce service"
-                        : "Créneaux de 45 min adaptés à ce service"
-                    }
+                    {(() => {
+                      const duration = selectedService.duration || 30;
+                      if (duration >= 60) {
+                        return "Créneaux d'1 heure adaptés à ce service";
+                      } else if (duration <= 30) {
+                        return "Créneaux de 30 min adaptés à ce service";
+                      } else {
+                        return "Créneaux de 45 min adaptés à ce service";
+                      }
+                    })()}
                   </Text>
                 </View>
               )}
@@ -1987,6 +2153,16 @@ const styles = StyleSheet.create({
   disabledDay: {
     opacity: 0.3,
   },
+  pastDay: {
+    opacity: 0.4,
+    backgroundColor: '#F3F4F6',
+  },
+  pastDayDark: {
+    backgroundColor: '#1F2937',
+  },
+  pastDayText: {
+    color: '#9CA3AF',
+  },
   dayLabel: {
     fontSize: 14,
     color: '#666',
@@ -2272,6 +2448,16 @@ const styles = StyleSheet.create({
   },
   monthViewTodayButton: {
     backgroundColor: '#e8f1ff',
+  },
+  monthViewPastDay: {
+    opacity: 0.4,
+    backgroundColor: '#F3F4F6',
+  },
+  monthViewPastDayDark: {
+    backgroundColor: '#1F2937',
+  },
+  monthViewPastDayText: {
+    color: '#9CA3AF',
   },
   monthViewTodayText: {
     color: '#4F8EF7',

@@ -907,7 +907,7 @@ const ServicesScreen: React.FC = () => {
                   <View style={styles.serviceDetailMeta}>
                     <View style={[styles.serviceDetailMetaCard, isDarkMode && styles.serviceDetailMetaCardDark]}>
                       <View style={styles.serviceDetailMetaIcon}>
-                        <Ionicons name="pricetag" size={24} color="#10b981" />
+                        <Ionicons name="pricetag" size={24} color="#4F8EF7" />
                       </View>
                       <View style={styles.serviceDetailMetaContent}>
                         <Text style={[styles.serviceDetailMetaLabel, isDarkMode && styles.serviceDetailMetaLabelDark]}>
@@ -1053,9 +1053,7 @@ const ServicesScreen: React.FC = () => {
             >
               <View style={[styles.modalHeader, isDarkMode && styles.modalHeaderDark]}>
                 <Text style={[styles.modalHeaderTitle, isDarkMode && styles.modalHeaderTitleDark]}>
-                  {showRecap ? 'Récapitulatif' : 
-                   showImageOptions ? 'Ajouter une photo' :
-                   `Étape ${createServiceStep}/5`}
+                  Nouvelle préstation
                 </Text>
                 <TouchableOpacity onPress={closeCreateServiceModal} style={styles.closeButton}>
                   <Ionicons name="close" size={24} color={isDarkMode ? "#fff" : "#333"} />
@@ -1221,19 +1219,14 @@ const ServicesScreen: React.FC = () => {
               ) : (
                 /* Étapes du formulaire */
                 <View style={styles.stepsContainer}>
-                  {/* Debug info */}
-                  <Text style={{color: isDarkMode ? '#fff' : '#000', fontSize: 12, textAlign: 'center', marginBottom: 10}}>
-                    Étape actuelle: {createServiceStep}/5
-                  </Text>
-                  
                   {/* Étape 1: Nom */}
                   {createServiceStep === 1 && (
                     <View style={styles.stepContainer}>
                       <Text style={[styles.stepTitle, isDarkMode && styles.stepTitleDark]}>
-                        Nom du service
+                        Nom préstation
                       </Text>
                       <Text style={[styles.stepDescription, isDarkMode && styles.stepDescriptionDark]}>
-                        Donnez un nom clair et descriptif à votre service
+                        Donnez un nom clair et descriptif à votre préstation
                       </Text>
                       <TextInput
                         style={[styles.stepInput, isDarkMode && styles.stepInputDark]}
@@ -1261,11 +1254,11 @@ const ServicesScreen: React.FC = () => {
                         Description
                       </Text>
                       <Text style={[styles.stepDescription, isDarkMode && styles.stepDescriptionDark]}>
-                        Décrivez votre service en détail (optionnel)
+                        Décrivez votre préstation en détail (optionnel)
                       </Text>
                       <TextInput
                         style={[styles.stepInput, styles.stepTextArea, isDarkMode && styles.stepInputDark]}
-                        placeholder="Description détaillée du service..."
+                        placeholder="Description détaillée de la préstation..."
                         placeholderTextColor={isDarkMode ? "#9CA3AF" : "#999"}
                         value={newService.description}
                         onChangeText={(text) => setNewService(prev => ({...prev, description: text}))}
@@ -1390,7 +1383,7 @@ const ServicesScreen: React.FC = () => {
                               {category.name}
                             </Text>
                             {newService.categoryId === category.id && (
-                              <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                              <Ionicons name="checkmark-circle" size={20} color="#4F8EF7" />
                             )}
                           </TouchableOpacity>
                         ))}
@@ -2188,7 +2181,7 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
   },
   
-  // Styles pour le modal de création de service
+  // Styles pour le modal de création de préstation
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -2324,7 +2317,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#10B981',
+    backgroundColor: '#4F8EF7',
     borderRadius: 2,
   },
   progressText: {
@@ -2493,7 +2486,7 @@ const styles = StyleSheet.create({
   nextButtonCompact: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#10B981',
+    backgroundColor: '#4F8EF7',
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 10,
@@ -2546,16 +2539,18 @@ const styles = StyleSheet.create({
   
   // Styles pour les options d'image
   imageOptionsContainer: {
-    paddingHorizontal: 24,
-    paddingVertical: 32,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
     alignItems: 'center',
+    maxWidth: '75%',
+    alignSelf: 'center',
   },
   imageOptionsTitle: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '600',
     color: '#111827',
     textAlign: 'center',
-    marginBottom: 32,
+    marginBottom: 12,
   },
   imageOptionsTitleDark: {
     color: '#F9FAFB',
@@ -2564,14 +2559,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F9FAFB',
-    paddingVertical: 20,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    borderWidth: 2,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
     borderColor: '#E5E7EB',
-    marginBottom: 16,
+    marginBottom: 8,
+    maxWidth: 240,
     width: '100%',
-    gap: 16,
+    gap: 10,
   },
   imageOptionButtonDark: {
     backgroundColor: '#374151',
@@ -2586,9 +2582,9 @@ const styles = StyleSheet.create({
     color: '#D1D5DB',
   },
   skipImageButton: {
-    marginTop: 24,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
   },
   skipImageButtonDark: {
     // Pas de style spécifique
@@ -2606,6 +2602,8 @@ const styles = StyleSheet.create({
   recapContainer: {
     paddingHorizontal: 24,
     paddingVertical: 32,
+    maxWidth: '90%',
+    alignSelf: 'center',
   },
   recapTitle: {
     fontSize: 24,

@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Image, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { useAuth } from '../../hooks/useAuth';
 import { ThemeContext } from '../../contexts/ThemeContext';
 import { Button } from '../../components/common/Button';
@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import authAPI from '../../api/auth';
 import { getClientAppointments } from '../../api/appointments';
 import { API_URL } from '../../config/api';
+import SvgAvatar from '../../components/common/SvgAvatar';
 
 interface ProfileScreenProps {
   navigation: any;
@@ -22,6 +23,24 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   useEffect(() => {
     // Charger les informations utilisateur à jour seulement si nous avons un utilisateur et un token valides
     if (user && token) {
+      // Utiliser l'avatar du contexte d'authentification s'il existe
+      if (user.avatar && !userAvatar) {
+        console.log('🖼️ Utilisation de l\'avatar du contexte:', user.avatar);
+        const baseUrl = API_URL.replace('/api', '');
+        
+        let avatarUrl;
+        if (user.avatar.startsWith('http')) {
+          avatarUrl = user.avatar;
+        } else if (user.avatar.startsWith('/uploads/')) {
+          avatarUrl = `${baseUrl}${user.avatar}`;
+        } else {
+          avatarUrl = `${baseUrl}/uploads/${user.avatar}`;
+        }
+        
+        console.log('🖼️ URL avatar finale:', avatarUrl);
+        setUserAvatar(avatarUrl);
+      }
+      
       refreshUserData();
       loadAppointmentsCount();
     }
@@ -35,12 +54,32 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     
     try {
       const userData = await authAPI.getMe(token);
+      console.log('🧪 DEBUG userData avatar:', userData.avatar);
+      
       if (userData.avatar) {
         // Construire l'URL complète de l'avatar
-        const avatarUrl = userData.avatar.startsWith('http') 
-          ? userData.avatar 
-          : `${API_URL}/uploads/avatars/${userData.avatar}`;
+        let avatarUrl;
+        
+        if (userData.avatar.startsWith('http')) {
+          avatarUrl = userData.avatar;
+        } else {
+          // Tester différents chemins possibles pour l'avatar
+          const baseUrl = API_URL.replace('/api', '');
+          
+          // Essayer d'abord avec le chemin direct
+          if (userData.avatar.startsWith('/uploads/')) {
+            avatarUrl = `${baseUrl}${userData.avatar}`;
+          } else {
+            // Sinon, construire le chemin avec /uploads/
+            avatarUrl = `${baseUrl}/uploads/${userData.avatar}`;
+          }
+        }
+        
+        console.log('🖼️ Avatar URL construite:', avatarUrl);
         setUserAvatar(avatarUrl);
+      } else {
+        console.log('❌ Pas d\'avatar trouvé pour l\'utilisateur');
+        setUserAvatar(null);
       }
     } catch (error: any) {
       console.error('Erreur lors de la récupération des données utilisateur:', error);
@@ -112,6 +151,14 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     );
   };
 
+  const handleAvatarError = (error: any) => {
+    console.log('❌ Erreur chargement avatar SVG:', userAvatar);
+    console.log('❌ Détails erreur SVG:', error?.nativeEvent || error);
+    
+    // L'erreur est maintenant gérée automatiquement par SvgAvatar
+    // qui affichera le placeholder en cas d'erreur
+  };
+
   return (
     <SafeAreaView style={[styles.container, isDarkMode && styles.containerDark]}>
       <View style={[styles.header, isDarkMode && styles.headerDark]}>
@@ -124,19 +171,21 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       {/* Espacement après header */}
       <View style={{ height: 16 }} />
 
-      <ScrollView style={[styles.content, isDarkMode && styles.contentDark]} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={[styles.content, isDarkMode && styles.contentDark]} 
+        contentContainerStyle={styles.scrollContentContainer}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={[styles.profileSection, isDarkMode && styles.profileSectionDark]}>
-          {userAvatar || user?.avatar ? (
-            <Image
-              source={{ uri: userAvatar || user?.avatar }}
-              style={styles.profileImage}
-              onError={() => setUserAvatar(null)}
-            />
-          ) : (
-            <View style={[styles.profileImage, styles.profileImagePlaceholder, isDarkMode && styles.profileImagePlaceholderDark]}>
-              <Ionicons name="person" size={40} color={isDarkMode ? "#9CA3AF" : "#666"} />
-            </View>
-          )}
+          <SvgAvatar
+            uri={userAvatar}
+            size={80}
+            isDarkMode={isDarkMode}
+            style={styles.profileImage}
+            onLoadStart={() => console.log('🔄 Début chargement avatar:', userAvatar)}
+            onLoad={() => console.log('✅ Avatar SVG chargé avec succès:', userAvatar)}
+            onError={handleAvatarError}
+          />
           
           <View style={styles.profileInfo}>
             <Text style={[styles.userName, isDarkMode && styles.userNameDark]}>
@@ -195,9 +244,11 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             </View>
             <Text style={[styles.menuText, isDarkMode && styles.menuTextDark]}>
               Historique des rendez-vous
-              {appointmentsCount > 0 && (
-                <Text style={styles.menuBadge}> ({appointmentsCount})</Text>
-              )}
+              {(() => {
+                return appointmentsCount > 0 && (
+                  <Text style={styles.menuBadge}> ({appointmentsCount})</Text>
+                );
+              })()}
             </Text>
             <Ionicons name="chevron-forward" size={24} color={isDarkMode ? "#9CA3AF" : "#ccc"} />
           </TouchableOpacity>
@@ -261,6 +312,9 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     backgroundColor: '#f8f9fa',
+  },
+  scrollContentContainer: {
+    paddingBottom: 40, // Padding bottom pour éviter que le scroll cache les éléments
   },
   profileSection: {
     backgroundColor: '#fff',

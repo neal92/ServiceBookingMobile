@@ -355,11 +355,13 @@ const AppointmentsScreen: React.FC = () => {
             ]}>
               {showFilters ? "Fermer" : "Filtres"}
             </Text>
-            {(statusFilter !== 'all') && (
-              <View style={styles.filterIndicator}>
-                <Text style={styles.filterIndicatorText}>•</Text>
-              </View>
-            )}
+            {(() => {
+              return statusFilter !== 'all' && (
+                <View style={styles.filterIndicator}>
+                  <Text style={styles.filterIndicatorText}>•</Text>
+                </View>
+              );
+            })()}
           </TouchableOpacity>
           
           <TouchableOpacity 
@@ -386,34 +388,38 @@ const AppointmentsScreen: React.FC = () => {
             ]}>
               {showSort ? "Fermer" : "Tri"}
             </Text>
-            {(dateFilter !== 'closest') && (
-              <View style={styles.sortIndicator}>
-                <Text style={styles.sortIndicatorText}>•</Text>
-              </View>
-            )}
+            {(() => {
+              return dateFilter !== 'closest' && (
+                <View style={styles.sortIndicator}>
+                  <Text style={styles.sortIndicatorText}>•</Text>
+                </View>
+              );
+            })()}
           </TouchableOpacity>
 
           {/* Bouton Clear visible seulement si des filtres sont appliqués */}
-          {(statusFilter !== 'all' || dateFilter !== 'closest') && (
-            <TouchableOpacity 
-              onPress={() => {
-                setStatusFilter('all');
-                setDateFilter('closest');
-                setShowFilters(false);
-                setShowSort(false);
-              }}
-              style={[styles.clearButton, isDarkMode && styles.clearButtonDark]}
-            >
-              <Ionicons 
-                name="refresh" 
-                size={18} 
-                color={isDarkMode ? "#EF4444" : "#EF4444"} 
-              />
-              <Text style={[styles.clearButtonText, isDarkMode && styles.clearButtonTextDark]}>
-                Clear
-              </Text>
-            </TouchableOpacity>
-          )}
+          {(() => {
+            return (statusFilter !== 'all' || dateFilter !== 'closest') && (
+              <TouchableOpacity 
+                onPress={() => {
+                  setStatusFilter('all');
+                  setDateFilter('closest');
+                  setShowFilters(false);
+                  setShowSort(false);
+                }}
+                style={[styles.clearButton, isDarkMode && styles.clearButtonDark]}
+              >
+                <Ionicons 
+                  name="refresh" 
+                  size={18} 
+                  color={isDarkMode ? "#EF4444" : "#EF4444"} 
+                />
+                <Text style={[styles.clearButtonText, isDarkMode && styles.clearButtonTextDark]}>
+                  Clear
+                </Text>
+              </TouchableOpacity>
+            );
+          })()}
         </View>
       </View>
 
@@ -479,11 +485,13 @@ const AppointmentsScreen: React.FC = () => {
                     >
                       {item.label}
                     </Text>
-                    {count > 0 && (
-                      <View style={[styles.statusBadge, { backgroundColor: item.color }]}>
-                        <Text style={styles.statusBadgeText}>{count}</Text>
-                      </View>
-                    )}
+                    {(() => {
+                      return count > 0 && (
+                        <View style={[styles.statusBadge, { backgroundColor: item.color }]}>
+                          <Text style={styles.statusBadgeText}>{count}</Text>
+                        </View>
+                      );
+                    })()}
                   </TouchableOpacity>
                 );
               }}
