@@ -243,9 +243,17 @@ const HomeScreen = ({ navigation, route }: any) => {
       if (user && token) {
         try {
           const data = await getUserNotifications(token);
-          setNotifications(data);
+          // Correction : s'assurer que notifications est toujours un tableau
+          if (Array.isArray(data)) {
+            setNotifications(data);
+          } else if (Array.isArray(data.notifications)) {
+            setNotifications(data.notifications);
+          } else {
+            setNotifications([]);
+          }
         } catch (e) {
           console.error('Erreur lors de la récupération des notifications:', e);
+          setNotifications([]);
         }
       }
     };
@@ -983,8 +991,9 @@ const HomeScreen = ({ navigation, route }: any) => {
           <Animated.View style={{
             flex: 1,
             height: calendarHeight,
-            overflow: 'visible' // Changé de 'hidden' à 'visible' pour éviter de couper les jours
+            // Correction overflow: wrap le contenu dans une View pour l'ombre
           }}>
+            <View style={{flex: 1, overflow: 'visible'}}>
             <Animated.View style={{
               flex: 1,
               opacity: calendarOpacity,
@@ -1244,7 +1253,7 @@ const HomeScreen = ({ navigation, route }: any) => {
                 </View>
               )}
             </Animated.View>
-            </Animated.View>
+            </View>
             
             
           {/* Affichage des rendez-vous du jour sélectionné */}
@@ -1534,10 +1543,10 @@ const HomeScreen = ({ navigation, route }: any) => {
               <Text style={[styles.sectionTitle, isDarkMode && styles.sectionTitleDark]}>
                 🔔 Notifications
             </Text>
-            {notifications.length === 0 ? (
+            {Array.isArray(notifications) && notifications.length === 0 ? (
               <Text style={[styles.noNotificationsText, isDarkMode && styles.noNotificationsTextDark]}>Aucune notification</Text>
             ) : (
-              notifications.map((notification) => (
+              Array.isArray(notifications) && notifications.map((notification) => (
                 <View key={notification.id} style={[styles.notificationItem, isDarkMode && styles.notificationItemDark]}>
                   <Text style={styles.notificationIcon}>{getNotificationIcon(notification.type)}</Text>
                   <View style={styles.notificationContent}>
