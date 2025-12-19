@@ -246,8 +246,8 @@ const HomeScreen = ({ navigation, route }: any) => {
           // Correction : s'assurer que notifications est toujours un tableau
           if (Array.isArray(data)) {
             setNotifications(data);
-          } else if (Array.isArray(data.notifications)) {
-            setNotifications(data.notifications);
+          } else if (data && typeof data === 'object' && Array.isArray((data as any).notifications)) {
+            setNotifications((data as any).notifications);
           } else {
             setNotifications([]);
           }
@@ -1254,6 +1254,7 @@ const HomeScreen = ({ navigation, route }: any) => {
               )}
             </Animated.View>
             </View>
+          </Animated.View>
             
             
           {/* Affichage des rendez-vous du jour sélectionné */}
